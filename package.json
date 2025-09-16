@@ -23,6 +23,7 @@
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
     "@archwayhq/arch3.js": "^0.7.5",
+    "@bolt-liquidity-hq/cosmwasm-client": "^0.1.0-beta.12",
     "@cosmjs/proto-signing": "^0.36.0",
     "@osmonauts/utils": "^1.18.0",
     "@skip-go/client": "1.5.6",
