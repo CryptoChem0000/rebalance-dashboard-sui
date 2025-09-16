@@ -1,4 +1,4 @@
-import { RegistryToken } from "./types";
+import { ChainInfo, RegistryToken } from "./types";
 
 // MAINNET
 export const DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT =
@@ -11,6 +11,14 @@ export const OSMOSIS_MAINNET_NATIVE_TOKEN: RegistryToken = {
   decimals: 6,
   logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png",
   coingeckoId: "osmosis",
+};
+export const OSMOSIS_MAINNET_CHAIN_INFO: ChainInfo = {
+  name: "Osmosis",
+  id: "osmosis-1",
+  rpcEndpoint: DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT,
+  restEndpoint: DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT,
+  nativeToken: OSMOSIS_MAINNET_NATIVE_TOKEN,
+  prefix: "osmo",
 };
 export const OSMOSIS_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
   [OSMOSIS_MAINNET_NATIVE_TOKEN.denom]: OSMOSIS_MAINNET_NATIVE_TOKEN,
@@ -50,6 +58,14 @@ export const OSMOSIS_TESTNET_NATIVE_TOKEN: RegistryToken = {
   logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png",
   coingeckoId: "osmosis",
 };
+export const OSMOSIS_TESTNET_CHAIN_INFO: ChainInfo = {
+  name: "Osmosis Testnet",
+  id: "osmo-test-5",
+  rpcEndpoint: DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT,
+  restEndpoint: DEFAULT_OSMOSIS_TESTNET_REST_ENDPOINT,
+  nativeToken: OSMOSIS_TESTNET_NATIVE_TOKEN,
+  prefix: "osmo",
+};
 export const OSMOSIS_TESTNET_TOKENS_MAP: Record<string, RegistryToken> = {
   [OSMOSIS_TESTNET_NATIVE_TOKEN.denom]: OSMOSIS_TESTNET_NATIVE_TOKEN,
   "ibc/DE6792CF9E521F6AD6E9A4BDF6225C9571A3B74ACC0A529F92BC5122A39D2E58": {
@@ -67,7 +83,7 @@ export const OSMOSIS_TESTNET_TOKENS_MAP: Record<string, RegistryToken> = {
     chainId: "osmo-test-5",
     denom:
       "ibc/5F10B4BED1A80DC44975D95D716AEF8CEBFB99B3F088C98361436A7D0CF5A830",
-    name: "ARCH",
+    name: "CONST",
     decimals: 18,
     logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/archway/images/arch.png",
     coingeckoId: "archway",

@@ -1,4 +1,4 @@
-import { RegistryToken } from "./types";
+import { ChainInfo, RegistryToken } from "./types";
 
 // MAINNET
 export const DEFAULT_ARCHWAY_MAINNET_RPC_ENDPOINT =
@@ -12,6 +12,14 @@ export const ARCHWAY_MAINNET_NATIVE_TOKEN: RegistryToken = {
   decimals: 18,
   logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/archway/images/arch.png",
   coingeckoId: "archway",
+};
+export const ARCHWAY_MAINNET_CHAIN_INFO: ChainInfo = {
+  name: "Archway",
+  id: "archway-1",
+  rpcEndpoint: DEFAULT_ARCHWAY_MAINNET_RPC_ENDPOINT,
+  restEndpoint: DEFAULT_ARCHWAY_MAINNET_REST_ENDPOINT,
+  nativeToken: ARCHWAY_MAINNET_NATIVE_TOKEN,
+  prefix: "archway",
 };
 export const ARCHWAY_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
   [ARCHWAY_MAINNET_NATIVE_TOKEN.denom]: ARCHWAY_MAINNET_NATIVE_TOKEN,
@@ -51,6 +59,14 @@ export const ARCHWAY_TESTNET_NATIVE_TOKEN: RegistryToken = {
   decimals: 18,
   logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/archway/images/arch.png",
   coingeckoId: "archway",
+};
+export const ARCHWAY_TESTNET_CHAIN_INFO: ChainInfo = {
+  name: "Archway Testnet",
+  id: "constantine-3",
+  rpcEndpoint: DEFAULT_ARCHWAY_TESTNET_RPC_ENDPOINT,
+  restEndpoint: DEFAULT_ARCHWAY_TESTNET_REST_ENDPOINT,
+  nativeToken: ARCHWAY_TESTNET_NATIVE_TOKEN,
+  prefix: "archway",
 };
 export const ARCHWAY_TESTNET_TOKENS_MAP: Record<string, RegistryToken> = {
   [ARCHWAY_TESTNET_NATIVE_TOKEN.denom]: ARCHWAY_TESTNET_NATIVE_TOKEN,

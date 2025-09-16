@@ -12,6 +12,7 @@
   },
   "author": "",
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/cli.ts",
@@ -20,10 +21,11 @@
     "test:all:watch": "vitest"
   },
   "dependencies": {
+    "@archway-kit/utils": "^0.5.52",
     "@archwayhq/arch3.js": "^0.7.5",
     "@cosmjs/proto-signing": "^0.36.0",
     "@osmonauts/utils": "^1.18.0",
-    "@skip-go/client": "^1.5.6",
+    "@skip-go/client": "1.5.6",
     "axios": "^1.11.0",
     "bignumber.js": "^9.3.1",
     "dotenv": "^17.2.2",
