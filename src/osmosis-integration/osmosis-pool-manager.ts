@@ -1,13 +1,13 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 import { osmosis, getSigningOsmosisClient } from "osmojs";
 
-import {
-  DEFAULT_MAINNET_REST_ENDPOINT,
-  DEFAULT_MAINNET_RPC_ENDPOINT,
-  DEFAULT_TESTNET_REST_ENDPOINT,
-  DEFAULT_TESTNET_RPC_ENDPOINT,
-} from "./constants";
 import { OsmosisCLPool } from "./osmosis-cl-pool";
+import {
+  DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT,
+  DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT,
+  DEFAULT_OSMOSIS_TESTNET_REST_ENDPOINT,
+  DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT,
+} from "../registry";
 
 import {
   CreatePoolParams,
@@ -39,13 +39,13 @@ export class OsmosisPoolManager {
     this.rpcEndpoint =
       rpcEndpoint ??
       (this.environment === "mainnet"
-        ? DEFAULT_MAINNET_RPC_ENDPOINT
-        : DEFAULT_TESTNET_RPC_ENDPOINT);
+        ? DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT
+        : DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT);
     this.restEndpoint =
       restEndpoint ??
       (this.environment === "mainnet"
-        ? DEFAULT_MAINNET_REST_ENDPOINT
-        : DEFAULT_TESTNET_REST_ENDPOINT);
+        ? DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT
+        : DEFAULT_OSMOSIS_TESTNET_REST_ENDPOINT);
     this.queryClient = queryClient;
     this.signingClient = signingClient;
   }
