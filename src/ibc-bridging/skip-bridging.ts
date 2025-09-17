@@ -7,9 +7,9 @@ import {
 } from "@skip-go/client";
 
 import {
-  ALL_CHAINS_TOKEN_MAP,
   ARCHWAY_MAINNET_CHAIN_INFO,
   ARCHWAY_TESTNET_CHAIN_INFO,
+  findRegistryTokenEquivalentOnOtherChain,
   OSMOSIS_MAINNET_CHAIN_INFO,
   OSMOSIS_TESTNET_CHAIN_INFO,
 } from "../registry";
@@ -55,14 +55,9 @@ export class SkipBridging {
     addressesByChain: Record<string, string>,
     params: BridgeTokenParams
   ): Promise<BridgeTokenResult> {
-    const destinationToken = Object.values(
-      ALL_CHAINS_TOKEN_MAP[params.toChainId] ?? {}
-    ).find((item) =>
-      params.fromToken.originDenom
-        ? item.denom === params.fromToken.originDenom &&
-          item.chainId === params.fromToken.originChainId
-        : item.originDenom === params.fromToken.denom &&
-          item.originChainId === params.fromToken.chainId
+    const destinationToken = findRegistryTokenEquivalentOnOtherChain(
+      params.fromToken,
+      params.toChainId
     );
 
     if (!destinationToken) {
