@@ -67,8 +67,8 @@ There is a file called `config.json` in the project folder with these settings:
 **What these settings mean:**
 - `rebalanceThresholdPercent`: When your position gets 95% out of range, it will rebalance
 - `token0/token1`: The token pair you want to provide liquidity for (currently we only support ATOM/USDC)
-- `tickSpacing`: How precise the price ranges are (100 is standard on osmosis)
-- `spreadFactor`: The fee tier (0.0005 = 0.05% fees)
+- `tickSpacing`: How precise the price ranges are (100 is standard on osmosis, the only valid options are 1, 10, 100, 1000)
+- `spreadFactor`: The fee tier (0.0005 = 0.05% fees, the only valid options are 0, 0.0001, 0.0005, 0.001, 0.002, 0.003, 0.005, 0.01, 0.025)
 - `bandPercentage`: How wide your price range is (10 = ±10% from current price)
 
 ## 📋 Available Commands
