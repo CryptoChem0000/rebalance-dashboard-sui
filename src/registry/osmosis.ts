@@ -44,6 +44,17 @@ export const OSMOSIS_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
     originDenom: "aarch",
     originChainId: "archway-1",
   },
+  "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2": {
+    chainId: "osmosis-1",
+    denom:
+      "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
+    name: "ATOM",
+    decimals: 6,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/cosmoshub/images/atom.png",
+    coingeckoId: "cosmos",
+    originDenom: "uatom",
+    originChainId: "cosmoshub-4",
+  },
 };
 
 export const DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT =

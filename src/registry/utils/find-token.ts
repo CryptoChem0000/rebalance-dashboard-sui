@@ -1,4 +1,12 @@
 import { ALL_CHAINS_TOKEN_MAP } from "../all-chains";
+import {
+  ARCHWAY_MAINNET_TOKENS_MAP,
+  ARCHWAY_TESTNET_TOKENS_MAP,
+} from "../archway";
+import {
+  OSMOSIS_MAINNET_TOKENS_MAP,
+  OSMOSIS_TESTNET_TOKENS_MAP,
+} from "../osmosis";
 
 import { RegistryToken } from "../types";
 
@@ -24,4 +32,20 @@ export const findRegistryTokenEquivalentOnOtherChain = (
           : item.originDenom === token.denom &&
             item.originChainId === token.chainId
       );
+};
+
+export const findArchwayTokensMap = (
+  environment: "mainnet" | "testnet" = "mainnet"
+): Record<string, RegistryToken> => {
+  return environment === "mainnet"
+    ? ARCHWAY_MAINNET_TOKENS_MAP
+    : ARCHWAY_TESTNET_TOKENS_MAP;
+};
+
+export const findOsmosisTokensMap = (
+  environment: "mainnet" | "testnet" = "mainnet"
+): Record<string, RegistryToken> => {
+  return environment === "mainnet"
+    ? OSMOSIS_MAINNET_TOKENS_MAP
+    : OSMOSIS_TESTNET_TOKENS_MAP;
 };

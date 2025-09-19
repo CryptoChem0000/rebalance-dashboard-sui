@@ -96,7 +96,7 @@ export class OsmosisPoolManager {
       queryClient,
       signingClient.signer,
       signingClient.signingClient,
-      params
+      params,
     );
   }
 
@@ -111,7 +111,8 @@ export class OsmosisPoolManager {
       poolId,
       queryClient,
       signingClient.signer,
-      signingClient.signingClient
+      signingClient.signingClient,
+      this.environment
     );
   }
 }

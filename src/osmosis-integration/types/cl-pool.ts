@@ -5,6 +5,7 @@ export type CreatePoolParams = {
   token1: string;
   tickSpacing: AuthorizedTickSpacing;
   spreadFactor: AuthorizedSpreadFactors;
+  environment?: "mainnet" | "testnet";
 };
 
 // TODO: load from chain and validate on pool creation
@@ -41,4 +42,44 @@ export type CreatePositionResponse = {
 export type WithdrawPositionParams = {
   positionId: string;
   liquidityAmount: string;
+};
+
+export type PoolInfoResponse = {
+  address: string;
+  incentivesAddress: string;
+  spreadRewardsAddress: string;
+  id: string;
+  currentTickLiquidity: string;
+  token0: string;
+  token1: string;
+  currentSqrtPrice: string;
+  currentTick: string;
+  tickSpacing: string;
+  exponentAtPriceOne: string;
+  spreadFactor: string;
+  lastLiquidityUpdate: Date;
+};
+
+export type PositionInfoResponse = {
+  position: PositionDetails;
+  asset0: Coin;
+  asset1: Coin;
+  claimableSpreadRewards: Coin[];
+  claimableIncentives: Coin[];
+  forfeitedIncentives: Coin[];
+};
+
+export type PositionDetails = {
+  positionId: string;
+  address: string;
+  poolId: string;
+  lowerTick: string;
+  upperTick: string;
+  joinTime: Date;
+  liquidity: string;
+};
+
+export type PositionRangeResult = {
+  isInRange: boolean;
+  percentageBalance: number;
 };

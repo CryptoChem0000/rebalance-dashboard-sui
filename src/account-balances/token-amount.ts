@@ -3,12 +3,17 @@ import { BigNumber } from "bignumber.js";
 import { RegistryToken } from "../registry";
 
 export class TokenAmount {
-  constructor(public amount: string, public token: RegistryToken) {}
+  public amount: string;
+
+  constructor(amount: BigNumber.Value, public token: RegistryToken) {
+    this.amount =
+      typeof amount === "string" ? amount : BigNumber(amount).toFixed();
+  }
 
   get humanReadableAmount(): string {
     return BigNumber(this.amount || 0)
       .shiftedBy(-this.token.decimals)
-      .toFixed();
+      .toFixed(this.token.decimals);
   }
 
   public static makeFromHumanReadableAmount(

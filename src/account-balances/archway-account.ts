@@ -1,10 +1,9 @@
 import axios from "axios";
 
 import {
-  ARCHWAY_MAINNET_TOKENS_MAP,
-  ARCHWAY_TESTNET_TOKENS_MAP,
   DEFAULT_ARCHWAY_MAINNET_REST_ENDPOINT,
   DEFAULT_ARCHWAY_TESTNET_REST_ENDPOINT,
+  findArchwayTokensMap,
   RegistryToken,
 } from "../registry";
 import { TokenAmount } from "./token-amount";
@@ -22,14 +21,11 @@ export class ArchwayAccount implements AbstractChainAccount {
       environment === "mainnet"
         ? DEFAULT_ARCHWAY_MAINNET_REST_ENDPOINT
         : DEFAULT_ARCHWAY_TESTNET_REST_ENDPOINT;
-    this.tokensMap =
-      environment === "mainnet"
-        ? ARCHWAY_MAINNET_TOKENS_MAP
-        : ARCHWAY_TESTNET_TOKENS_MAP;
+    this.tokensMap = findArchwayTokensMap();
   }
 
   async getAvailableBalances(): Promise<Record<string, TokenAmount>> {
-    const result = {};
+    const result: Record<string, TokenAmount> = {};
 
     const response = await axios.get(
       `${this.restEndpoint}/cosmos/bank/v1beta1/balances/${this.address}`

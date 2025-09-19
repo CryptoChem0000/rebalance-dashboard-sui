@@ -42,10 +42,22 @@ export class SkipBridging {
     }
     setClientOptions({
       endpointOptions: {
-        getRpcEndpointForChain: async (chainId: string) =>
-          this.rpcEndpointsMap[chainId],
-        getRestEndpointForChain: async (chainId: string) =>
-          this.restEndpointsMap[chainId],
+        getRpcEndpointForChain: async (chainId: string) => {
+          if (!this.rpcEndpointsMap[chainId]) {
+            throw new Error(
+              `No rpc endpoint configured on skip for chain ${chainId}`
+            );
+          }
+          return this.rpcEndpointsMap[chainId];
+        },
+        getRestEndpointForChain: async (chainId: string) => {
+          if (!this.restEndpointsMap[chainId]) {
+            throw new Error(
+              `No rest endpoint configured on skip for chain ${chainId}`
+            );
+          }
+          return this.restEndpointsMap[chainId];
+        },
       },
     });
   }
@@ -108,7 +120,7 @@ export class SkipBridging {
 
         if (status?.state !== TransactionState.STATE_COMPLETED_SUCCESS) {
           throw new Error(
-            `Error ${status.state}, chainId: ${chainId}, tx: ${txHash}`
+            `Error ${status?.state}, chainId: ${chainId}, tx: ${txHash}`
           );
         }
 

@@ -7,13 +7,14 @@ import { existsSync } from "node:fs";
 import { getWorkingDirectory } from "../../utils";
 
 import { AbstractKeyStore } from "../types";
+import { join } from "node:path";
 
 /**
  * Environment variable-based key storage implementation.
- * 
+ *
  * This class allows to store and manage cryptographic mnemonics
  * using environment variables stored in a .env file. It implements the AbstractKeyStore interface
- * 
+ *
  * @remarks
  * - Mnemonics are stored as environment variables in a specified .env file
  * - The implementation uses dotenv.parse() to avoid polluting process.env
@@ -21,7 +22,7 @@ import { AbstractKeyStore } from "../types";
  * - Suitable for development environments; production should use more secure storage
  * - This implementation is NOT thread-safe. Avoid concurrent operations
  *   on the same .env file to prevent data loss
- * 
+ *
  * @example
  * ```typescript
  * const keyStore = await EnvVariableKeyStore.make('.env.local');
@@ -46,33 +47,35 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Factory method to create an EnvVariableKeyStore instance
-   * 
+   *
    * @param envFilePath - Optional path to the .env file. If not provided,
    *                     uses the working directory resolution logic
    * @returns Promise resolving to a new EnvVariableKeyStore instance
-   * 
+   *
    * @example
    * ```typescript
    * // Use default working directory (git root directory or process working directory)
    * const keyStore = await EnvVariableKeyStore.make();
-   * 
+   *
    * // Use custom path
    * const keyStore = await EnvVariableKeyStore.make('/path/to/.env');
    * ```
    */
   static async make(envFilePath?: string): Promise<EnvVariableKeyStore> {
-    const path = await getWorkingDirectory(envFilePath);
+    const path = envFilePath
+      ? envFilePath
+      : join(await getWorkingDirectory(envFilePath), ".env");
 
     return new EnvVariableKeyStore(path);
   }
 
   /**
    * Retrieves a stored mnemonic by its name
-   * 
+   *
    * @param name - The environment variable name containing the mnemonic
    * @returns Promise resolving to the mnemonic string
    * @throws Error if the key is not found in the .env file
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -94,21 +97,21 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Creates an OfflineSigner instance for transaction signing
-   * 
+   *
    * @param name - The environment variable name containing the mnemonic
    * @param chainPrefix - The blockchain address prefix (defaults to "archway")
    *                     Common prefixes: "cosmos", "osmo", "juno", "archway"
    * @returns Promise resolving to an OfflineSigner instance
    * @throws Error if the key is not found or the mnemonic is invalid
-   * 
+   *
    * @example
    * ```typescript
    * // Get signer for Cosmos Hub
    * const signer = await keyStore.getSigner('WALLET_MAIN', 'cosmos');
-   * 
+   *
    * // Get signer for Osmosis
    * const osmoSigner = await keyStore.getSigner('WALLET_TRADE', 'osmo');
-   * 
+   *
    * // Get accounts from signer
    * const accounts = await signer.getAccounts();
    * console.log('Address:', accounts[0].address);
@@ -130,16 +133,16 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Creates a new key with a generated 24-word mnemonic
-   * 
+   *
    * @param name - The environment variable name for the new key
    * @returns Promise resolving to the generated mnemonic string
    * @throws Error if a key with the same name already exists
-   * 
+   *
    * @remarks
    * - Generates a cryptographically secure 24-word mnemonic
    * - Uses 256 bits of entropy for maximum security
    * - Automatically saves the mnemonic to the .env file
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -174,14 +177,14 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Deletes a key from storage
-   * 
+   *
    * @param name - The environment variable name to delete
    * @returns Promise that resolves when the key is deleted
-   * 
+   *
    * @remarks
    * Removes the key from the .env file completely. This operation
    * cannot be undone, so ensure you have backed up any important mnemonics.
-   * 
+   *
    * @example
    * ```typescript
    * await keyStore.deleteKey('WALLET_OLD');
@@ -194,14 +197,14 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Lists all keys that appear to be mnemonics
-   * 
+   *
    * @returns Promise resolving to an array of key names
-   * 
+   *
    * @remarks
    * Identifies mnemonics by checking if the value contains at least 12 words
    * (the minimum for a valid BIP39 mnemonic). This helps filter out other
    * environment variables that might be in the same .env file.
-   * 
+   *
    * @example
    * ```typescript
    * const keys = await keyStore.listKeys();
@@ -225,10 +228,10 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Reads and parses environment variables from the .env file
-   * 
+   *
    * @returns Promise resolving to a key-value object of environment variables
    * @private
-   * 
+   *
    * @remarks
    * Uses dotenv.parse() to parse the file content without affecting process.env,
    * ensuring complete isolation from the global environment.
@@ -245,13 +248,13 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
   /**
    * Saves or deletes a key-value pair in the .env file
-   * 
+   *
    * @param name - The environment variable name
    * @param value - The mnemonic value (pass undefined to delete)
    * @returns Promise that resolves when the file is updated
    * @throws Error if the file operation fails
    * @private
-   * 
+   *
    * @remarks
    * - Updates existing keys in place to preserve file structure
    * - Adds new keys at the end of the file
@@ -288,8 +291,8 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
 
       // Write back to file
       await writeFile(this.envFilePath, envContent, "utf-8");
-    } catch (error) {
-      throw new Error(`Failed to save key to .env file: ${error.message}`);
+    } catch (error: any) {
+      throw new Error(`Failed to save key to .env file: ${error?.message}`);
     }
   }
 }
