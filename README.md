@@ -16,7 +16,7 @@ When you provide liquidity on Osmosis, you need to keep your position "in range"
 Before you start, you'll need:
 - A computer with Node.js installed (version 16 or higher)
 - Some OSMO tokens on the Osmosis Chain, and some ARCH tokens on the Archway Chain in your wallet for gas fees.
-- A meaningful amount of ATOM and USDC tokens on the Osmosis Chain to be used in the pool as liquidity.
+- A meaningful amount of ATOM and/or USDC tokens on the Osmosis Chain to be used in the pool as liquidity.
 - Basic familiarity with using a terminal/command line
 
 ### Step 1: Installation

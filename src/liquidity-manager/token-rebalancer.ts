@@ -78,7 +78,6 @@ export class TokenRebalancer {
       );
       return await this.handleExcessToken0(
         currentBalances,
-        token0Excess,
         currentPrice
       );
     } else {
@@ -90,7 +89,6 @@ export class TokenRebalancer {
       );
       return await this.handleExcessToken1(
         currentBalances,
-        token1Excess.abs(),
         currentPrice
       );
     }
@@ -98,7 +96,6 @@ export class TokenRebalancer {
 
   private async handleExcessToken0(
     currentBalances: TokenPairBalances,
-    excessAmount: BigNumber,
     osmosisPrice: string
   ): Promise<TokenPairBalances> {
     const token0 = currentBalances.token0.token;
@@ -140,14 +137,19 @@ export class TokenRebalancer {
       )}, Osmosis price: ${humanReadablePrice(osmosisPrice, token0, token1)}`
     );
 
-    // Calculate the exact amount to bridge based on Bolt price
-    // We need to solve: amountToBridge * boltPrice * slippage = (excessAmount - amountToBridge) * osmosisPrice
-    // This ensures after swapping, both tokens will have equal value
-    const slippageFactor = BigNumber(1); // 0% slippage tolerance
-    const numerator = excessAmount.times(osmosisPrice);
-    const denominator = BigNumber(osmosisPrice).plus(
-      BigNumber(boltPrice).times(slippageFactor)
-    );
+    // Calculate the exact amount to bridge to achieve 50/50 balance
+    // Current balances:
+    const balance0 = BigNumber(currentBalances.token0.amount);
+    const balance1 = BigNumber(currentBalances.token1.amount);
+
+    // We want: (balance0 - amountToBridge) * osmosisPrice = balance1 + (amountToBridge * boltPrice)
+    // Solving for amountToBridge:
+    // balance0 * osmosisPrice - amountToBridge * osmosisPrice = balance1 + amountToBridge * boltPrice
+    // balance0 * osmosisPrice - balance1 = amountToBridge * (osmosisPrice + boltPrice)
+    // amountToBridge = (balance0 * osmosisPrice - balance1) / (osmosisPrice + boltPrice)
+
+    const numerator = balance0.times(osmosisPrice).minus(balance1);
+    const denominator = BigNumber(osmosisPrice).plus(BigNumber(boltPrice));
     const amountToBridge = numerator.div(denominator);
 
     console.log(
@@ -155,9 +157,7 @@ export class TokenRebalancer {
         new TokenAmount(amountToBridge, token0).humanReadableAmount
       } ${token0.name}`
     );
-    const expectedOutput = BigNumber(amountToBridge)
-      .times(boltPrice)
-      .times(slippageFactor);
+    const expectedOutput = BigNumber(amountToBridge).times(boltPrice);
     console.log(
       `Expected token1 output: ${
         new TokenAmount(expectedOutput, token1).humanReadableAmount
@@ -177,6 +177,11 @@ export class TokenRebalancer {
     }
 
     // Bridge to Archway
+    console.log(
+      `Bridging ${
+        new TokenAmount(amountToBridge, token0).humanReadableAmount
+      } ${token1Archway.name} to Archway...`
+    );
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
       {
@@ -259,7 +264,6 @@ export class TokenRebalancer {
 
   private async handleExcessToken1(
     currentBalances: TokenPairBalances,
-    excessAmount: BigNumber,
     osmosisPrice: string
   ): Promise<TokenPairBalances> {
     const token0 = currentBalances.token0.token;
@@ -301,14 +305,20 @@ export class TokenRebalancer {
       )}, Osmosis price: ${humanReadablePrice(osmosisPrice, token0, token1)}`
     );
 
-    // Calculate the exact amount to bridge based on Bolt price
-    // For excess token1: amountToBridge / boltPrice * slippage = (excessAmount - amountToBridge) / osmosisPrice
-    // This ensures after swapping, both tokens will have equal value
-    const slippageFactor = BigNumber(1); // 0% slippage tolerance
-    const numerator = excessAmount.div(osmosisPrice);
-    const denominator = BigNumber(1)
-      .div(osmosisPrice)
-      .plus(BigNumber(1).div(boltPrice).times(slippageFactor));
+    // Calculate the exact amount to bridge to achieve 50/50 balance
+    // Current balances:
+    const balance0 = BigNumber(currentBalances.token0.amount);
+    const balance1 = BigNumber(currentBalances.token1.amount);
+
+    // We want: (balance0 + amountToBridge / boltPrice) * osmosisPrice = balance1 - amountToBridge
+    // Solving for amountToBridge:
+    // (balance0 * osmosisPrice) + (amountToBridge * osmosisPrice / boltPrice) = balance1 - amountToBridge
+    // balance0 * osmosisPrice + amountToBridge * osmosisPrice / boltPrice + amountToBridge = balance1
+    // amountToBridge * (osmosisPrice / boltPrice + 1) = balance1 - balance0 * osmosisPrice
+    // amountToBridge = (balance1 - balance0 * osmosisPrice) / (osmosisPrice / boltPrice + 1)
+
+    const numerator = balance1.minus(balance0.times(osmosisPrice));
+    const denominator = BigNumber(osmosisPrice).div(boltPrice).plus(1);
     const amountToBridge = numerator.div(denominator);
 
     console.log(
@@ -316,7 +326,7 @@ export class TokenRebalancer {
         new TokenAmount(amountToBridge, token1).humanReadableAmount
       } ${token1.name}`
     );
-    const expectedOutput = amountToBridge.div(boltPrice).times(slippageFactor);
+    const expectedOutput = amountToBridge.div(boltPrice);
     console.log(
       `Expected token0 output: ${
         new TokenAmount(expectedOutput, token0).humanReadableAmount
@@ -336,6 +346,11 @@ export class TokenRebalancer {
     }
 
     // Bridge to Archway
+    console.log(
+      `Bridging ${
+        new TokenAmount(amountToBridge, token1).humanReadableAmount
+      } ${token1Archway.name} to Archway...`
+    );
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
       {
