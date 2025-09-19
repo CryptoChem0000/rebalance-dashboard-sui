@@ -3,9 +3,7 @@ import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import path from "path";
 
-import {
-  OsmosisAccount,
-} from "../account-balances";
+import { OsmosisAccount } from "../account-balances";
 import { SkipBridging } from "../ibc-bridging";
 import { KeyManager, KeyStoreType } from "../key-manager";
 import {
@@ -29,11 +27,12 @@ import {
   LiquidityManagerConfig,
   PositionCreationResult,
   RebalanceResult,
+  StatusResponse,
   TokenPairBalances,
 } from "./types";
 
 export class LiquidityManager {
-  private config: Config;
+  public config: Config;
   private configPath: string;
   private poolManager: OsmosisPoolManager;
   private archwaySigner: OfflineSigner;
@@ -81,7 +80,7 @@ export class LiquidityManager {
     >
   ): Promise<LiquidityManager> {
     const workingDir = await getWorkingDirectory();
-    const configPath = path.join(workingDir, "src", "config.json");
+    const configPath = path.join(workingDir, "config.json");
     const configContent = await fs.readFile(configPath, "utf-8");
     const config = JSON.parse(configContent) as Config;
     let mnemonic = await (
@@ -316,6 +315,44 @@ export class LiquidityManager {
     await this.saveConfig();
 
     return result;
+  }
+
+  async getStatus(): Promise<StatusResponse> {
+    if (!this.config.osmosisPool.id) {
+      return {};
+    }
+
+    const pool = await this.poolManager.getOsmosisCLPool(
+      this.config.osmosisPool.id,
+      this.osmosisSigner
+    );
+    const poolInfo = await pool.getPoolInfo();
+
+    if (!this.config.osmosisPosition.id) {
+      return {
+        poolInfo,
+      };
+    }
+
+    const positionInfo = await pool.getPositionInfo(
+      this.config.osmosisPosition.id
+    );
+    const positionRange = await pool.isPositionInRange(
+      this.config.osmosisPosition.id,
+      Number(this.config.rebalanceThresholdPercent)
+    );
+
+    return {
+      poolInfo,
+      positionInfo,
+      positionRange,
+      positionLowerPrice: OsmosisTickMath.tickToPrice(
+        positionInfo.position.lowerTick
+      ),
+      positionUpperPrice: OsmosisTickMath.tickToPrice(
+        positionInfo.position.upperTick
+      ),
+    };
   }
 
   private async saveConfig(): Promise<void> {

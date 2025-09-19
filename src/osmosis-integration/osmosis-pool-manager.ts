@@ -59,24 +59,23 @@ export class OsmosisPoolManager {
     return this.queryClient;
   }
 
-  async getSigningClient(
-    newSigner?: OfflineSigner
+  async getSignerWithSigningClient(
+    signer?: OfflineSigner,
+    signingClient?: OsmosisSigningClient
   ): Promise<SignerWithSigningClient> {
-    if (!this.signingClient || !this.signer || newSigner) {
-      this.signer = newSigner ?? this.signer;
-
-      if (!this.signer) {
+    if (signer && signingClient) {
+      this.signer = signer;
+      this.signingClient = signingClient;
+    } else {
+      if (!signer) {
         throw new Error("Missing Signer to create signing client");
       }
 
+      this.signer = signer;
       this.signingClient = await getSigningOsmosisClient({
         rpcEndpoint: this.rpcEndpoint,
         signer: this.signer,
       });
-    }
-
-    if (!this.signer) {
-      throw new Error("Missing Signer to create signing client");
     }
 
     return {
@@ -87,31 +86,33 @@ export class OsmosisPoolManager {
 
   async createOsmosisCLPool(
     params: CreatePoolParams,
-    signer?: OfflineSigner
+    signer?: OfflineSigner,
+    signingClient?: OsmosisSigningClient
   ): Promise<OsmosisCLPool> {
     const queryClient = await this.getQueryClient();
-    const signingClient = await this.getSigningClient(signer);
+    const signingClientResult = await this.getSignerWithSigningClient(signer, signingClient);
 
     return await OsmosisCLPool.createPool(
       queryClient,
-      signingClient.signer,
-      signingClient.signingClient,
-      params,
+      signingClientResult.signer,
+      signingClientResult.signingClient,
+      params
     );
   }
 
   async getOsmosisCLPool(
     poolId: string,
-    signer?: OfflineSigner
+    signer?: OfflineSigner,
+    signingClient?: OsmosisSigningClient
   ): Promise<OsmosisCLPool> {
     const queryClient = await this.getQueryClient();
-    const signingClient = await this.getSigningClient(signer);
+    const signingClientResult = await this.getSignerWithSigningClient(signer, signingClient);
 
     return new OsmosisCLPool(
       poolId,
       queryClient,
-      signingClient.signer,
-      signingClient.signingClient,
+      signingClientResult.signer,
+      signingClientResult.signingClient,
       this.environment
     );
   }

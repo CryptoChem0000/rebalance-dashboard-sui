@@ -1,5 +1,7 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 
+import { PoolInfoResponse, PositionInfoResponse, PositionRangeResult } from "../../osmosis-integration";
+
 export type Config = {
   rebalanceThresholdPercent: number;
   osmosisPool: {
@@ -40,4 +42,12 @@ export type RebalanceResult = {
   action: "created" | "rebalanced" | "none";
   message: string;
   error?: string;
+};
+
+export type StatusResponse = {
+  poolInfo?: PoolInfoResponse;
+  positionInfo?: PositionInfoResponse;
+  positionRange?: PositionRangeResult;
+  positionUpperPrice?: string;
+  positionLowerPrice?: string;
 };
