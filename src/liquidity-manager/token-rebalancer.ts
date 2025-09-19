@@ -167,9 +167,8 @@ export class TokenRebalancer {
     // Verify if we are higher than the minimum swap amount out on bolt
     const boltClient = BoltOnArchway.makeBoltClient(this.environment);
     const boltPoolConfig = await boltClient.getPoolConfigByBaseAsset(
-      token0Archway.denom
+      token1Archway.denom
     );
-
     if (expectedOutput.lte(boltPoolConfig.minBaseOut)) {
       console.log(
         "Amount we want to bridge and swap is smaller than the minimum out on bolt exchange"
@@ -327,7 +326,7 @@ export class TokenRebalancer {
     // Verify if we are higher than the minimum swap amount out on bolt
     const boltClient = BoltOnArchway.makeBoltClient(this.environment);
     const boltPoolConfig = await boltClient.getPoolConfigByBaseAsset(
-      token1Archway.denom
+      token0Archway.denom
     );
     if (expectedOutput.lte(boltPoolConfig.minBaseOut)) {
       console.log(

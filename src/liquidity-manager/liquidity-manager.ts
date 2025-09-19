@@ -3,7 +3,7 @@ import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import path from "path";
 
-import { OsmosisAccount } from "../account-balances";
+import { OsmosisAccount, TokenAmount } from "../account-balances";
 import { SkipBridging } from "../ibc-bridging";
 import { KeyManager, KeyStoreType } from "../key-manager";
 import {
@@ -29,6 +29,7 @@ import {
   RebalanceResult,
   StatusResponse,
   TokenPairBalances,
+  WithdrawPositionResponse,
 } from "./types";
 
 export class LiquidityManager {
@@ -352,6 +353,53 @@ export class LiquidityManager {
       positionUpperPrice: OsmosisTickMath.tickToPrice(
         positionInfo.position.upperTick
       ),
+    };
+  }
+
+  async withdrawPosition(): Promise<WithdrawPositionResponse> {
+    // Get pool
+    if (!this.config.osmosisPool.id) {
+      throw new Error("No pool ID found");
+    }
+
+    const pool = await this.poolManager.getOsmosisCLPool(
+      this.config.osmosisPool.id,
+      this.osmosisSigner
+    );
+
+    // Withdraw position
+    console.log("Withdrawing position...");
+    const positionInfo = await pool.getPositionInfo(
+      this.config.osmosisPosition.id
+    );
+    const tokenMap = findOsmosisTokensMap(this.environment);
+
+    const token0 = tokenMap[this.config.osmosisPool.token0];
+    const token1 = tokenMap[this.config.osmosisPool.token1];
+
+    if (!token0 || !token1) {
+      throw new Error("Pool tokens not found in registry");
+    }
+
+    const result = await pool.withdrawPosition({
+      positionId: this.config.osmosisPosition.id,
+      liquidityAmount: positionInfo.position.liquidity,
+    });
+
+    const amount0Withdrawn = new TokenAmount(result.amount0, token0);
+    const amount1Withdrawn = new TokenAmount(result.amount1, token1);
+
+    console.log(
+      `Withdrew ${amount0Withdrawn.humanReadableAmount} ${token0.name} and ${amount1Withdrawn.humanReadableAmount} ${token1.name}`
+    );
+
+    // Clear position ID from config
+    this.config.osmosisPosition.id = "";
+    await this.saveConfig();
+
+    return {
+      amount0Withdrawn,
+      amount1Withdrawn,
     };
   }
 

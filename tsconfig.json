@@ -1,71 +1,70 @@
 {
   "compilerOptions": {
     // Language and Environment
-    "target": "ES2020", // Modern JavaScript features
-    "lib": ["ES2020"], // Include ES2020 library features
-    "module": "commonjs", // Node.js module system
-
+    "target": "ES2020",                          // Modern JavaScript features
+    "lib": ["ES2020"],                          // Include ES2020 library features
+    "module": "commonjs",                        // Node.js module system
+    
     // Module Resolution
-    "moduleResolution": "node", // Node.js style module resolution
-    "baseUrl": "./", // Base directory to resolve non-relative module names
-    "paths": {
-      // Path mapping for cleaner imports
+    "moduleResolution": "node",                  // Node.js style module resolution
+    "baseUrl": "./",                            // Base directory to resolve non-relative module names
+    "paths": {                                  // Path mapping for cleaner imports
       "@/*": ["src/*"]
     },
-    "resolveJsonModule": true, // Allow importing .json files
-    "allowSyntheticDefaultImports": true, // Allow default imports from modules with no default export
-    "esModuleInterop": true, // Enable interoperability between CommonJS and ES Modules
-
+    "resolveJsonModule": true,                  // Allow importing .json files
+    "allowSyntheticDefaultImports": true,       // Allow default imports from modules with no default export
+    "esModuleInterop": true,                    // Enable interoperability between CommonJS and ES Modules
+    
     // Emit
-    "outDir": "./dist", // Output directory for compiled files
-    "rootDir": "./src", // Root directory of source files
-    "declaration": true, // Generate .d.ts files
-    "declarationMap": true, // Generate .d.ts.map files
-    "sourceMap": true, // Generate source maps
-    "removeComments": false, // Keep comments in output
-    "preserveConstEnums": true, // Keep const enums
-
+    "outDir": "./dist",                         // Output directory for compiled files
+    "rootDir": "./src",                         // Root directory of source files
+    "declaration": true,                        // Generate .d.ts files
+    "declarationMap": true,                     // Generate .d.ts.map files
+    "sourceMap": true,                          // Generate source maps
+    "removeComments": false,                    // Keep comments in output
+    "preserveConstEnums": true,                 // Keep const enums
+    
     // Type Checking
-    "strict": true, // Enable all strict type checking options
-    "noImplicitAny": true, // Error on expressions with 'any' type
-    "strictNullChecks": true, // Enable strict null checks
-    "strictFunctionTypes": true, // Enable strict checking of function types
-    "strictBindCallApply": true, // Enable strict 'bind', 'call', and 'apply'
-    "strictPropertyInitialization": true, // Enable strict property initialization
-    "noImplicitThis": true, // Error on 'this' with 'any' type
-    "alwaysStrict": true, // Parse in strict mode
-
+    "strict": true,                             // Enable all strict type checking options
+    "noImplicitAny": true,                      // Error on expressions with 'any' type
+    "strictNullChecks": true,                   // Enable strict null checks
+    "strictFunctionTypes": true,                // Enable strict checking of function types
+    "strictBindCallApply": true,                // Enable strict 'bind', 'call', and 'apply'
+    "strictPropertyInitialization": true,       // Enable strict property initialization
+    "noImplicitThis": true,                     // Error on 'this' with 'any' type
+    "alwaysStrict": true,                       // Parse in strict mode
+    
     // Additional Checks
-    "noUnusedLocals": true, // Report errors on unused locals
-    "noUnusedParameters": true, // Report errors on unused parameters
-    "noImplicitReturns": true, // Report error when not all code paths return
-    "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases
-    "noUncheckedIndexedAccess": true, // Add 'undefined' to index access
-    "noImplicitOverride": true, // Require override modifier
+    "noUnusedLocals": true,                     // Report errors on unused locals
+    "noUnusedParameters": true,                 // Report errors on unused parameters
+    "noImplicitReturns": true,                  // Report error when not all code paths return
+    "noFallthroughCasesInSwitch": true,        // Report errors for fallthrough cases
+    "noUncheckedIndexedAccess": true,          // Add 'undefined' to index access
+    "noImplicitOverride": true,                 // Require override modifier
     "noPropertyAccessFromIndexSignature": false, // Allow property access from index signature
-
+    
     // Skip Lib Check
-    "skipLibCheck": true, // Skip type checking of declaration files
-    "forceConsistentCasingInFileNames": true, // Ensure consistent casing in file names
-
+    "skipLibCheck": true,                       // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true,  // Ensure consistent casing in file names
+    
     // Experimental
-    "experimentalDecorators": true, // Enable decorators
-    "emitDecoratorMetadata": true // Enable decorator metadata
+    "experimentalDecorators": true,             // Enable decorators
+    "emitDecoratorMetadata": true              // Enable decorator metadata
   },
   "include": [
-    "src/**/*" // Include all files in src
+    "src/**/*"                                  // Include all files in src
   ],
   "exclude": [
-    "node_modules", // Exclude node_modules
-    "dist", // Exclude output directory
-    "**/*.test.ts", // Exclude test files
-    "**/*.spec.ts" // Exclude spec files
+    "node_modules",                             // Exclude node_modules
+    "dist",                                     // Exclude output directory
+    "**/*.test.ts",                            // Exclude test files
+    "**/*.spec.ts"                             // Exclude spec files
   ],
   "ts-node": {
-    "transpileOnly": true, // Faster execution for ts-node
-    "files": true, // Load files from tsconfig.json
+    "transpileOnly": true,                      // Faster execution for ts-node
+    "files": true,                              // Load files from tsconfig.json
     "compilerOptions": {
-      "module": "commonjs" // Override module for ts-node
+      "module": "commonjs"                      // Override module for ts-node
     }
   }
 }

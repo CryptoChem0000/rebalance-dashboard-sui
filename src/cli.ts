@@ -106,6 +106,45 @@ program
   });
 
 program
+  .command("withdraw")
+  .description("Withdraw current position and remove it from config")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option("--no-log", "Disable logging to file")
+  .option("--log-file <filename>", "Custom log filename")
+  .action(async (options) => {
+    const logger = new Logger(options.logFile);
+
+    try {
+      // Initialize logger if logging is enabled
+      if (options.log !== false) {
+        await logger.initialize();
+        console.log(`📝 Logging to: ${logger.getLogPath()}`);
+      }
+
+      console.log("💰 Starting position withdrawal...\n");
+
+      const manager = await LiquidityManager.make({
+        environment: options.environment,
+        // TODO: pass the correct endpoints override if set in cli params
+        rpcEndpointsOverride: {},
+        restEndpointsOverride: {},
+      });
+
+      await manager.withdrawPosition();
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      logger.close();
+      process.exit(1);
+    } finally {
+      logger.close();
+    }
+  });
+
+program
   .command("status")
   .description("Show current pool and position status")
   .option(
@@ -138,13 +177,13 @@ program
 
       if (!status.poolInfo) {
         console.log("\nℹ️  No pool configured yet");
-        logger.close();
         return;
       }
 
       // Get pool info
       console.log("🏊 Pool Information:");
       console.log("─".repeat(50));
+      console.log(status.poolInfo)
       console.log(`Pool ID: ${status.poolInfo.id}`);
       console.log(`Token 0: ${status.poolInfo.token0}`);
       console.log(`Token 1: ${status.poolInfo.token1}`);
@@ -154,7 +193,6 @@ program
 
       if (!status.positionInfo) {
         console.log("\nℹ️  No position configured yet");
-        logger.close();
         return;
       }
 
@@ -177,7 +215,6 @@ program
 
       if (!status.positionRange) {
         console.log("\nℹ️  Failed to calculate position range");
-        logger.close();
         return;
       }
 

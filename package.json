@@ -1,24 +1,31 @@
 {
   "name": "external-lp-rebalance-with-bolt",
   "version": "1.0.0",
-  "description": "",
+  "description": "Automated liquidity management tool for Osmosis concentrated liquidity pools with cross-chain rebalancing via Bolt",
   "keywords": [
+    "osmosis",
+    "liquidity",
+    "defi",
+    "cosmos",
+    "archway",
     "bolt",
-    "lp"
+    "concentrated-liquidity",
+    "automated-market-maker"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/phi-labs-ltd/external-lp-rebalance-with-bolt.git"
   },
-  "author": "",
+  "author": "Phi Labs Ltd",
+  "license": "",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js",
-    "test:all": "vitest run",
-    "test:all:watch": "vitest"
+    "cli": "tsx src/cli.ts",
+    "start": "tsx src/cli.ts run",
+    "status": "tsx src/cli.ts status",
+    "withdraw": "tsx src/cli.ts withdraw"
   },
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
@@ -36,6 +43,7 @@
   "devDependencies": {
     "@types/node": "^24.3.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
