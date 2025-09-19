@@ -1,6 +1,11 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 
-import { PoolInfoResponse, PositionInfoResponse, PositionRangeResult } from "../../osmosis-integration";
+import { TokenAmount } from "../../account-balances";
+import {
+  PoolInfoResponse,
+  PositionInfoResponse,
+  PositionRangeResult,
+} from "../../osmosis-integration";
 
 export type Config = {
   rebalanceThresholdPercent: number;
@@ -50,4 +55,9 @@ export type StatusResponse = {
   positionRange?: PositionRangeResult;
   positionUpperPrice?: string;
   positionLowerPrice?: string;
+};
+
+export type WithdrawPositionResponse = {
+  amount0Withdrawn: TokenAmount;
+  amount1Withdrawn: TokenAmount;
 };
