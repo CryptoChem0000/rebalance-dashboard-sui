@@ -9,6 +9,8 @@ When you provide liquidity on Osmosis, you need to keep your position "in range"
 3. **Rebalances** your position when needed (withdraws and recreates it)
 4. **Manages your funds** between Osmosis and Archway to get the best prices
 
+NOTE: Current MVP version only works with the ATOM/USDC pair
+
 ## 🚀 Getting Started (Step by Step)
 
 ### Prerequisites
