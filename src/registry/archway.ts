@@ -56,6 +56,17 @@ export const ARCHWAY_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
     originDenom: "uatom",
     originChainId: "cosmoshub-4",
   },
+  "ibc/B68560022FB3CAD599224B16AAEB62FB85848A7674E40B68A0F1982F270B356E": {
+    chainId: "archway-1",
+    denom:
+      "ibc/B68560022FB3CAD599224B16AAEB62FB85848A7674E40B68A0F1982F270B356E",
+    name: "TIA",
+    decimals: 6,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/celestia/images/celestia.png",
+    coingeckoId: "celestia",
+    originDenom: "utia",
+    originChainId: "celestia",
+  },
 };
 
 // TESTNET

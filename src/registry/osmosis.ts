@@ -55,6 +55,17 @@ export const OSMOSIS_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
     originDenom: "uatom",
     originChainId: "cosmoshub-4",
   },
+  "ibc/D79E7D83AB399BFFF93433E54FAA480C191248FC556924A2A8351AE2638B3877": {
+    chainId: "osmosis-1",
+    denom:
+      "ibc/D79E7D83AB399BFFF93433E54FAA480C191248FC556924A2A8351AE2638B3877",
+    name: "TIA",
+    decimals: 6,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/celestia/images/celestia.png",
+    coingeckoId: "celestia",
+    originDenom: "utia",
+    originChainId: "celestia",
+  },
 };
 
 export const DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT =
