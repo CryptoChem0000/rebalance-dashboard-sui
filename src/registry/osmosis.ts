@@ -28,7 +28,7 @@ export const OSMOSIS_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
       "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4",
     name: "USDC",
     decimals: 6,
-    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/noble/images/USDCoin.png",
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/_non-cosmos/ethereum/images/usdc.png",
     coingeckoId: "usd-coin",
     originDenom: "uusdc",
     originChainId: "noble-1",
@@ -66,6 +66,49 @@ export const OSMOSIS_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
     originDenom: "utia",
     originChainId: "celestia",
   },
+  "ibc/64BA6E31FE887D66C6F8F31C7B1A80C7CA179239677B4088BB55F5EA07DBE273": {
+    chainId: "osmosis-1",
+    denom:
+      "ibc/64BA6E31FE887D66C6F8F31C7B1A80C7CA179239677B4088BB55F5EA07DBE273",
+    name: "INJ",
+    decimals: 18,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/injective/images/inj.png",
+    coingeckoId: "injective-protocol",
+    originDenom: "inj",
+    originChainId: "injective-1",
+  },
+  "factory/osmo1z0qrq605sjgcqpylfl4aa6s90x738j7m58wyatt0tdzflg2ha26q67k743/wbtc":
+    {
+      chainId: "osmosis-1",
+      denom:
+        "factory/osmo1z0qrq605sjgcqpylfl4aa6s90x738j7m58wyatt0tdzflg2ha26q67k743/wbtc",
+      name: "WBTC.osmo",
+      decimals: 8,
+      logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/_non-cosmos/ethereum/images/wbtc.png",
+      coingeckoId: "wrapped-bitcoin",
+    },
+  "ibc/EA1D43981D5C9A1C4AAEA9C23BB1D4FA126BA9BC7020A25E0AE4AA841EA25DC5": {
+    chainId: "osmosis-1",
+    denom:
+      "ibc/EA1D43981D5C9A1C4AAEA9C23BB1D4FA126BA9BC7020A25E0AE4AA841EA25DC5",
+    name: "WETH.axl",
+    decimals: 18,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/_non-cosmos/ethereum/images/eth-white.png",
+    coingeckoId: "axlweth",
+    originDenom: "weth-wei",
+    originChainId: "axelar-dojo-1",
+  },
+  "ibc/1480B8FD20AD5FCAE81EA87584D269547DD4D436843C1D20F15E00EB64743EF4": {
+    chainId: "osmosis-1",
+    denom:
+      "ibc/1480B8FD20AD5FCAE81EA87584D269547DD4D436843C1D20F15E00EB64743EF4",
+    name: "AKT",
+    decimals: 6,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/akash/images/akt.png",
+    coingeckoId: "akash-network",
+    originDenom: "uakt",
+    originChainId: "akashnet-2",
+  },
 };
 
 export const DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT =
@@ -96,7 +139,7 @@ export const OSMOSIS_TESTNET_TOKENS_MAP: Record<string, RegistryToken> = {
       "ibc/DE6792CF9E521F6AD6E9A4BDF6225C9571A3B74ACC0A529F92BC5122A39D2E58",
     name: "USDC",
     decimals: 6,
-    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/noble/images/USDCoin.png",
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/_non-cosmos/ethereum/images/usdc.png",
     coingeckoId: "usd-coin",
     originDenom: "uusdc",
     originChainId: "grand-1",

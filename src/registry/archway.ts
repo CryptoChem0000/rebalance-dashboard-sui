@@ -29,7 +29,7 @@ export const ARCHWAY_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
       "ibc/43897B9739BD63E3A08A88191999C632E052724AB96BD4C74AE31375C991F48D",
     name: "USDC",
     decimals: 6,
-    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/noble/images/USDCoin.png",
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/_non-cosmos/ethereum/images/usdc.png",
     coingeckoId: "usd-coin",
     originDenom: "uusdc",
     originChainId: "noble-1",
@@ -67,6 +67,51 @@ export const ARCHWAY_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
     originDenom: "utia",
     originChainId: "celestia",
   },
+  "ibc/9428981CEA5DA704D99DD51AAB2EC62359178392B667138CD4480B3F6585E71C": {
+    chainId: "archway-1",
+    denom:
+      "ibc/9428981CEA5DA704D99DD51AAB2EC62359178392B667138CD4480B3F6585E71C",
+    name: "INJ",
+    decimals: 18,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/injective/images/inj.png",
+    coingeckoId: "injective-protocol",
+    originDenom: "inj",
+    originChainId: "injective-1",
+  },
+  "ibc/CF57A83CED6CEC7D706631B5DC53ABC21B7EDA7DF7490732B4361E6D5DD19C73": {
+    chainId: "archway-1",
+    denom:
+      "ibc/CF57A83CED6CEC7D706631B5DC53ABC21B7EDA7DF7490732B4361E6D5DD19C73",
+    name: "WBTC.osmo",
+    decimals: 8,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/_non-cosmos/ethereum/images/wbtc.png",
+    coingeckoId: "wrapped-bitcoin",
+    originDenom:
+      "factory/osmo1z0qrq605sjgcqpylfl4aa6s90x738j7m58wyatt0tdzflg2ha26q67k743/wbtc",
+    originChainId: "osmosis-1",
+  },
+  "ibc/13C5990F84FA5D472E1F8BB1BAAEA8774DA5F24128EC02B119107AD21FB52A61": {
+    chainId: "archway-1",
+    denom:
+      "ibc/13C5990F84FA5D472E1F8BB1BAAEA8774DA5F24128EC02B119107AD21FB52A61",
+    name: "WETH.axl",
+    decimals: 18,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/_non-cosmos/ethereum/images/eth-white.png",
+    coingeckoId: "axlweth",
+    originDenom: "weth-wei",
+    originChainId: "axelar-dojo-1",
+  },
+  "ibc/C2CFB1C37C146CF95B0784FD518F8030FEFC76C5800105B1742FB65FFE65F873": {
+    chainId: "archway-1",
+    denom:
+      "ibc/C2CFB1C37C146CF95B0784FD518F8030FEFC76C5800105B1742FB65FFE65F873",
+    name: "AKT",
+    decimals: 6,
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/akash/images/akt.png",
+    coingeckoId: "akash-network",
+    originDenom: "uakt",
+    originChainId: "akashnet-2",
+  },
 };
 
 // TESTNET
@@ -98,7 +143,7 @@ export const ARCHWAY_TESTNET_TOKENS_MAP: Record<string, RegistryToken> = {
       "ibc/34F8D3402273FFA5278AE5757D81CE151ACFD4B19C494C0EE372A7229714824F",
     name: "USDC",
     decimals: 6,
-    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/master/noble/images/USDCoin.png",
+    logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/_non-cosmos/ethereum/images/usdc.png",
     coingeckoId: "usd-coin",
     originDenom: "uusdc",
     originChainId: "grand-1",
