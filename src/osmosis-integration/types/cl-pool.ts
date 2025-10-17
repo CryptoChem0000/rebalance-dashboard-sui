@@ -1,4 +1,5 @@
 import { Coin } from "@cosmjs/proto-signing";
+import { DeliverTxResponse } from "osmojs";
 
 export type CreatePoolParams = {
   token0: string;
@@ -37,6 +38,7 @@ export type CreatePositionResponse = {
   liquidityCreated: string;
   lowerTick: string;
   upperTick: string;
+  txOutput: DeliverTxResponse;
 };
 
 export type WithdrawPositionParams = {

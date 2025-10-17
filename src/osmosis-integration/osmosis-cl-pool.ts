@@ -138,6 +138,7 @@ export class OsmosisCLPool {
       liquidityCreated: parsedResponse.liquidityCreated,
       lowerTick: BigNumber(parsedResponse.lowerTick).toFixed(),
       upperTick: BigNumber(parsedResponse.upperTick).toFixed(),
+      txOutput: response,
     };
   }
 

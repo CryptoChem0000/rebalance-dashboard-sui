@@ -54,5 +54,6 @@ temp/
 .tmp/
 .temp/
 
-# CLI run logs
-logs/
+# CLI run logs and database
+/logs/
+/database/

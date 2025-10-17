@@ -8,6 +8,7 @@ import {
   OSMOSIS_CREATE_POOL_FEE,
   OSMOSIS_WITHDRAW_LP_POSITION_FEE,
 } from "./constants";
+import { SQLiteTransactionRepository, TransactionType } from "../database";
 import { SkipBridging } from "../ibc-bridging";
 import { KeyManager, KeyStoreType } from "../key-manager";
 import {
@@ -46,16 +47,19 @@ export class LiquidityManager {
   private poolManager: OsmosisPoolManager;
   private archwaySigner: OfflineSigner;
   private osmosisSigner: OfflineSigner;
+  private osmosisAddress: string;
   private osmosisChainInfo: ChainInfo;
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
+  private database: SQLiteTransactionRepository;
 
   constructor(params: LiquidityManagerConfig) {
     this.config = params.config;
     this.configPath = params.configPath;
     this.archwaySigner = params.archwaySigner;
     this.osmosisSigner = params.osmosisSigner;
+    this.osmosisAddress = params.osmosisAddress;
     this.environment = params.environment || "mainnet";
     this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
 
@@ -76,12 +80,19 @@ export class LiquidityManager {
       environment: this.environment,
       skipBridging: this.skipBridging,
     });
+
+    this.database = params.database;
   }
 
   static async make(
     params: Omit<
       LiquidityManagerConfig,
-      "config" | "configPath" | "osmosisSigner" | "archwaySigner"
+      | "config"
+      | "configPath"
+      | "osmosisSigner"
+      | "archwaySigner"
+      | "osmosisAddress"
+      | "database"
     >
   ): Promise<LiquidityManager> {
     const workingDir = await getWorkingDirectory();
@@ -98,6 +109,9 @@ export class LiquidityManager {
     const osmosisSigner = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
       prefix: findOsmosisChainInfo(params.environment).prefix,
     });
+    const osmosisAddress = await getSignerAddress(osmosisSigner);
+
+    const database = await SQLiteTransactionRepository.make(osmosisAddress);
 
     mnemonic = "";
 
@@ -105,8 +119,10 @@ export class LiquidityManager {
       ...params,
       archwaySigner,
       osmosisSigner,
+      osmosisAddress,
       config,
       configPath,
+      database,
     });
   }
 
@@ -364,6 +380,17 @@ export class LiquidityManager {
       tokenMinAmount0: "0",
       tokenMinAmount1: "0",
     });
+    this.database.addTransaction({
+      signerAddress: this.osmosisAddress,
+      chainId: this.osmosisChainInfo.id,
+      transactionType: TransactionType.CREATE_POSITION,
+      inputAmount: result.amount0,
+      inputToken: token0.denom,
+      secondInputAmount: result.amount1,
+      secondInputToken: token1.denom,
+      txHash: result.txOutput.transactionHash,
+      successful: true,
+    })
 
     // Update config with position ID
     this.config.osmosisPosition.id = result.positionId;
@@ -478,8 +505,10 @@ export class LiquidityManager {
   private async getOsmosisAccountBalances(): Promise<
     Record<string, TokenAmount>
   > {
-    const osmosisAddress = await getSignerAddress(this.osmosisSigner);
-    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
+    const osmosisAccount = new OsmosisAccount(
+      this.osmosisAddress,
+      this.environment
+    );
     return await osmosisAccount.getAvailableBalances();
   }
 

@@ -1,6 +1,7 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 
 import { TokenAmount } from "../../account-balances";
+import { SQLiteTransactionRepository } from "../../database";
 import {
   PoolInfoResponse,
   PositionInfoResponse,
@@ -25,11 +26,13 @@ export type Config = {
 export type LiquidityManagerConfig = {
   config: Config;
   configPath: string;
-  osmosisSigner: OfflineSigner;
   archwaySigner: OfflineSigner;
+  osmosisSigner: OfflineSigner;
+  osmosisAddress: string;
   environment?: "mainnet" | "testnet";
   rpcEndpointsOverride?: Record<string, string>;
   restEndpointsOverride?: Record<string, string>;
+  database: SQLiteTransactionRepository;
 };
 
 export type PositionCreationResult = {

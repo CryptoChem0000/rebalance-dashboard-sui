@@ -239,7 +239,7 @@ export class TokenRebalancer {
 
     // Verify minimum swap amount on bolt
     const boltClient = BoltOnArchway.makeBoltClient(this.environment);
-    const boltPoolConfig = await boltClient.getPoolConfigByBaseAsset(
+    const boltPoolConfig = await boltClient.getPoolConfigByDenom(
       targetTokenArchway.denom
     );
     if (expectedOutput.lte(boltPoolConfig.minBaseOut)) {
