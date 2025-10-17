@@ -1,5 +1,7 @@
-import { TokenAmount } from "../../account-balances";
-import { RegistryToken } from "../../registry";
+import { BigNumber } from "bignumber.js";
+
+import { TokenAmount } from "../account-balances/token-amount";
+import { RegistryToken } from "../registry/types";
 
 export const assertEnoughBalanceForFees = (
   balances: Record<string, TokenAmount>,

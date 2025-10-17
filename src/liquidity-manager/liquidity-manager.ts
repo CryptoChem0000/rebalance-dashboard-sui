@@ -3,11 +3,11 @@ import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import path from "path";
 
+import { OsmosisAccount, TokenAmount } from "../account-balances";
 import {
-  ArchwayAccount,
-  OsmosisAccount,
-  TokenAmount,
-} from "../account-balances";
+  OSMOSIS_CREATE_POOL_FEE,
+  OSMOSIS_WITHDRAW_LP_POSITION_FEE,
+} from "./constants";
 import { SkipBridging } from "../ibc-bridging";
 import { KeyManager, KeyStoreType } from "../key-manager";
 import {
@@ -25,7 +25,11 @@ import {
   findOsmosisTokensMap,
 } from "../registry";
 import { TokenRebalancer } from "./token-rebalancer";
-import { getSignerAddress, getWorkingDirectory } from "../utils";
+import {
+  assertEnoughBalanceForFees,
+  getSignerAddress,
+  getWorkingDirectory,
+} from "../utils";
 
 import {
   Config,
@@ -35,7 +39,6 @@ import {
   StatusResponse,
   WithdrawPositionResponse,
 } from "./types";
-import { assertEnoughBalanceForFees } from "./utils";
 
 export class LiquidityManager {
   public config: Config;
