@@ -3,7 +3,11 @@ import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import path from "path";
 
-import { OsmosisAccount, TokenAmount } from "../account-balances";
+import {
+  ArchwayAccount,
+  OsmosisAccount,
+  TokenAmount,
+} from "../account-balances";
 import { SkipBridging } from "../ibc-bridging";
 import { KeyManager, KeyStoreType } from "../key-manager";
 import {
@@ -15,6 +19,7 @@ import {
 } from "../osmosis-integration";
 import { getPairPriceOnOsmosis } from "../prices";
 import {
+  ChainInfo,
   findArchwayChainInfo,
   findOsmosisChainInfo,
   findOsmosisTokensMap,
@@ -28,9 +33,9 @@ import {
   PositionCreationResult,
   RebalanceResult,
   StatusResponse,
-  TokenPairBalances,
   WithdrawPositionResponse,
 } from "./types";
+import { assertEnoughBalanceForFees } from "./utils";
 
 export class LiquidityManager {
   public config: Config;
@@ -38,6 +43,7 @@ export class LiquidityManager {
   private poolManager: OsmosisPoolManager;
   private archwaySigner: OfflineSigner;
   private osmosisSigner: OfflineSigner;
+  private osmosisChainInfo: ChainInfo;
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
@@ -48,17 +54,12 @@ export class LiquidityManager {
     this.archwaySigner = params.archwaySigner;
     this.osmosisSigner = params.osmosisSigner;
     this.environment = params.environment || "mainnet";
+    this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
 
     this.poolManager = new OsmosisPoolManager({
       environment: this.environment,
-      rpcEndpoint:
-        params.rpcEndpointsOverride?.[
-          findOsmosisChainInfo(this.environment).id
-        ],
-      restEndpoint:
-        params.restEndpointsOverride?.[
-          findOsmosisChainInfo(this.environment).id
-        ],
+      rpcEndpoint: params.rpcEndpointsOverride?.[this.osmosisChainInfo.id],
+      restEndpoint: params.restEndpointsOverride?.[this.osmosisChainInfo.id],
     });
 
     this.skipBridging = new SkipBridging(
@@ -108,19 +109,42 @@ export class LiquidityManager {
 
   async execute(): Promise<RebalanceResult> {
     console.log("Starting liquidity management execution...");
+    let osmosisBalances = await this.getOsmosisAccountBalances();
 
     // Get pool or create if it doesn't exist
     let pool: OsmosisCLPool;
     if (!this.config.osmosisPool.id) {
       console.log("No pool ID found, creating new pool...");
+      assertEnoughBalanceForFees(
+        osmosisBalances,
+        this.osmosisChainInfo.nativeToken,
+        OSMOSIS_CREATE_POOL_FEE,
+        "creating a pool"
+      );
       pool = await this.createPool();
       console.log(`Pool created with ID: ${pool.poolId}`);
+      osmosisBalances = await this.getOsmosisAccountBalances();
     } else {
       console.log(`Using existing pool ID: ${this.config.osmosisPool.id}`);
+
       pool = await this.poolManager.getOsmosisCLPool(
         this.config.osmosisPool.id,
         this.osmosisSigner
       );
+
+      if (
+        !this.config.osmosisPool.token0 ||
+        !this.config.osmosisPool.token1 ||
+        !this.config.osmosisPool.tickSpacing ||
+        !this.config.osmosisPool.spreadFactor ||
+        !this.isValidTickSpacing()
+      ) {
+        console.log("Missing some pool config, will now query them onchain");
+        await this.updatePoolInfoConfigFile(pool);
+        console.log(
+          `Config file updated for pool id ${this.config.osmosisPool.id}`
+        );
+      }
     }
 
     // Check if we have a position and if it needs rebalancing
@@ -158,6 +182,12 @@ export class LiquidityManager {
         );
 
         // Withdraw position
+        assertEnoughBalanceForFees(
+          osmosisBalances,
+          this.osmosisChainInfo.nativeToken,
+          OSMOSIS_WITHDRAW_LP_POSITION_FEE,
+          "withdraw position"
+        );
         console.log("Withdrawing position...");
         const positionInfo = await pool.getPositionInfo(
           this.config.osmosisPosition.id
@@ -170,6 +200,7 @@ export class LiquidityManager {
         // Clear position ID from config
         this.config.osmosisPosition.id = "";
         await this.saveConfig();
+        osmosisBalances = await this.getOsmosisAccountBalances();
       } catch (error) {
         console.error(
           "Error checking position, it might not exist. Creating new position...",
@@ -182,7 +213,7 @@ export class LiquidityManager {
 
     // Create new position
     console.log("Creating new position...");
-    const positionResult = await this.createPosition(pool);
+    const positionResult = await this.createPosition(pool, osmosisBalances);
 
     return {
       poolId: pool.poolId,
@@ -213,12 +244,29 @@ export class LiquidityManager {
     return pool;
   }
 
-  private async createPosition(
+  private async updatePoolInfoConfigFile(
     pool: OsmosisCLPool
-  ): Promise<PositionCreationResult> {
-    const osmosisAddress = await getSignerAddress(this.osmosisSigner);
-    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
+  ): Promise<OsmosisCLPool> {
+    const poolInfo = await pool.getPoolInfo();
 
+    // Update pool object
+    pool.token0 = poolInfo.token0;
+    pool.token1 = poolInfo.token1;
+
+    // Update pool config
+    this.config.osmosisPool.token0 = poolInfo.token0;
+    this.config.osmosisPool.token1 = poolInfo.token1;
+    this.config.osmosisPool.tickSpacing = Number(poolInfo.tickSpacing);
+    this.config.osmosisPool.spreadFactor = Number(poolInfo.spreadFactor);
+    await this.saveConfig();
+
+    return pool;
+  }
+
+  private async createPosition(
+    pool: OsmosisCLPool,
+    osmosisBalances?: Record<string, TokenAmount>
+  ): Promise<PositionCreationResult> {
     // Get token registry
     const tokenMap = findOsmosisTokensMap(this.environment);
 
@@ -230,12 +278,13 @@ export class LiquidityManager {
     }
 
     // Get current balances
-    const balance0 = await osmosisAccount.getTokenAvailableBalance(
-      token0.denom
-    );
-    const balance1 = await osmosisAccount.getTokenAvailableBalance(
-      token1.denom
-    );
+    const innerOsmosisBalances =
+      osmosisBalances ?? (await this.getOsmosisAccountBalances());
+
+    const balance0 =
+      innerOsmosisBalances[token0.denom] ?? new TokenAmount(0, token0);
+    const balance1 =
+      innerOsmosisBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     console.log(
       `Current balances: ${balance0.humanReadableAmount} ${token0.name}, ${balance1.humanReadableAmount} ${token1.name}`
@@ -259,8 +308,14 @@ export class LiquidityManager {
     );
 
     // Convert prices to ticks with proper rounding
-    const poolInfo = await pool.getPoolInfo();
-    const tickSpacing = Number(poolInfo.tickSpacing) as AuthorizedTickSpacing;
+    if (!this.isValidTickSpacing()) {
+      throw new Error(
+        `Invalid tick spacing of ${this.config.osmosisPool.tickSpacing} on the osmosis pool config file`
+      );
+    }
+
+    const tickSpacing = this.config.osmosisPool
+      .tickSpacing as AuthorizedTickSpacing;
 
     const lowerTick = OsmosisTickMath.roundToTickSpacing(
       OsmosisTickMath.priceToTick(lowerPrice),
@@ -276,17 +331,13 @@ export class LiquidityManager {
     );
     console.log(`Tick range: ${lowerTick} - ${upperTick}`);
 
-    // Calculate required amounts for 50/50 deposit
-    const balances: TokenPairBalances = {
-      token0: balance0,
-      token1: balance1,
-    };
-
     // Rebalance tokens if needed
     const rebalancedAmounts =
       await this.tokenRebalancer.rebalanceTokensFor5050Deposit(
-        balances,
-        currentPrice
+        token0,
+        token1,
+        currentPrice,
+        osmosisBalances
       );
 
     console.log(
@@ -367,6 +418,15 @@ export class LiquidityManager {
       this.osmosisSigner
     );
 
+    const osmosisBalances = await this.getOsmosisAccountBalances();
+
+    assertEnoughBalanceForFees(
+      osmosisBalances,
+      this.osmosisChainInfo.nativeToken,
+      OSMOSIS_WITHDRAW_LP_POSITION_FEE,
+      "withdraw position"
+    );
+
     // Withdraw position
     console.log("Withdrawing position...");
     const positionInfo = await pool.getPositionInfo(
@@ -401,6 +461,23 @@ export class LiquidityManager {
       amount0Withdrawn,
       amount1Withdrawn,
     };
+  }
+
+  private isValidTickSpacing(): boolean {
+    const AUTHORIZED_TICK_SPACING_SET = new Set<AuthorizedTickSpacing>([
+      1, 10, 100, 1000,
+    ]);
+    return AUTHORIZED_TICK_SPACING_SET.has(
+      this.config.osmosisPool.tickSpacing as AuthorizedTickSpacing
+    );
+  }
+
+  private async getOsmosisAccountBalances(): Promise<
+    Record<string, TokenAmount>
+  > {
+    const osmosisAddress = await getSignerAddress(this.osmosisSigner);
+    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
+    return await osmosisAccount.getAvailableBalances();
   }
 
   private async saveConfig(): Promise<void> {

@@ -1,3 +1,4 @@
+import { Coin } from "@cosmjs/proto-signing";
 import axios from "axios";
 
 import {
@@ -27,11 +28,22 @@ export class ArchwayAccount implements AbstractChainAccount {
   async getAvailableBalances(): Promise<Record<string, TokenAmount>> {
     const result: Record<string, TokenAmount> = {};
 
-    const response = await axios.get(
-      `${this.restEndpoint}/cosmos/bank/v1beta1/balances/${this.address}`
-    );
+    let foundBalances: Coin[] = [];
+    let nextPage: string | null = null;
 
-    for (const item of response.data?.balances ?? []) {
+    do {
+      const response = await axios.get(
+        `${this.restEndpoint}/cosmos/bank/v1beta1/balances/${this.address}${
+          nextPage ? `?pagination.key=${nextPage}` : ""
+        }`
+      );
+
+      foundBalances = foundBalances.concat(response.data?.balances ?? []);
+
+      nextPage = response.data?.pagination?.next_key ?? null;
+    } while (nextPage);
+
+    for (const item of foundBalances) {
       const registryToken = this.tokensMap[item.denom];
       if (registryToken) {
         result[registryToken.denom] = new TokenAmount(

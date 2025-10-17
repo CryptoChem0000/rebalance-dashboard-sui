@@ -90,7 +90,10 @@ export class OsmosisPoolManager {
     signingClient?: OsmosisSigningClient
   ): Promise<OsmosisCLPool> {
     const queryClient = await this.getQueryClient();
-    const signingClientResult = await this.getSignerWithSigningClient(signer, signingClient);
+    const signingClientResult = await this.getSignerWithSigningClient(
+      signer,
+      signingClient
+    );
 
     return await OsmosisCLPool.createPool(
       queryClient,
@@ -106,7 +109,10 @@ export class OsmosisPoolManager {
     signingClient?: OsmosisSigningClient
   ): Promise<OsmosisCLPool> {
     const queryClient = await this.getQueryClient();
-    const signingClientResult = await this.getSignerWithSigningClient(signer, signingClient);
+    const signingClientResult = await this.getSignerWithSigningClient(
+      signer,
+      signingClient
+    );
 
     return new OsmosisCLPool(
       poolId,

@@ -208,7 +208,7 @@ export class OsmosisCLPool {
       token1: pool.token1,
       currentSqrtPrice: pool.currentSqrtPrice,
       currentTick: BigNumber(pool.currentTick).toFixed(),
-      tickSpacing: BigNumber(pool.tickSpacing).toFixed(9),
+      tickSpacing: BigNumber(pool.tickSpacing).toFixed(),
       exponentAtPriceOne: BigNumber(pool.exponentAtPriceOne).toFixed(),
       spreadFactor: pool.spreadFactor,
       lastLiquidityUpdate: pool.lastLiquidityUpdate,

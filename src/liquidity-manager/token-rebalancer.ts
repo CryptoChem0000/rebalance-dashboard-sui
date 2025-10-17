@@ -2,7 +2,11 @@ import { convertAddress } from "@archway-kit/utils";
 import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
 
-import { OsmosisAccount, TokenAmount } from "../account-balances";
+import {
+  ArchwayAccount,
+  OsmosisAccount,
+  TokenAmount,
+} from "../account-balances";
 import { BoltOnArchway } from "../bolt-liquidity";
 import { SkipBridging } from "../ibc-bridging";
 import { getPairPriceOnBoltArchway } from "../prices";
@@ -10,32 +14,66 @@ import {
   findRegistryTokenEquivalentOnOtherChain,
   findArchwayChainInfo,
   findOsmosisChainInfo,
+  RegistryToken,
+  ChainInfo,
 } from "../registry";
 import { getSignerAddress, humanReadablePrice } from "../utils";
 
-import { TokenPairBalances, TokenRebalancerConfig } from "./types";
+import { RebalancerOutput, TokenRebalancerConfig } from "./types";
+import { assertEnoughBalanceForFees } from "./utils";
 
 export class TokenRebalancer {
   private archwaySigner: OfflineSigner;
   private osmosisSigner: OfflineSigner;
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
+  private archwayChainInfo: ChainInfo;
+  private osmosisChainInfo: ChainInfo;
 
   constructor(config: TokenRebalancerConfig) {
     this.archwaySigner = config.archwaySigner;
     this.osmosisSigner = config.osmosisSigner;
     this.environment = config.environment;
     this.skipBridging = config.skipBridging;
+    this.archwayChainInfo = findArchwayChainInfo(this.environment);
+    this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
   }
 
   async rebalanceTokensFor5050Deposit(
-    currentBalances: TokenPairBalances,
-    currentPrice: string
-  ): Promise<TokenPairBalances> {
-    const token0 = currentBalances.token0.token;
-    const token1 = currentBalances.token1.token;
-    const balance0Value = BigNumber(currentBalances.token0.amount);
-    const balance1Value = BigNumber(currentBalances.token1.amount);
+    token0: RegistryToken,
+    token1: RegistryToken,
+    currentPrice: string,
+    osmosisBalances?: Record<string, TokenAmount>
+  ): Promise<RebalancerOutput> {
+    const innerOsmosisBalances =
+      osmosisBalances ?? (await this.getOsmosisAccountBalances());
+
+    const expectedFeeNeededIfNative = BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(
+      OSMOSIS_CREATE_LP_POSITION_FEE
+    );
+
+    const balance0Value = BigNumber.max(
+      BigNumber(innerOsmosisBalances[token0.denom]?.amount ?? 0).minus(
+        token0.denom === this.osmosisChainInfo.nativeToken.denom
+          ? expectedFeeNeededIfNative
+          : 0
+      ),
+      0
+    );
+    const balance1Value = BigNumber.max(
+      BigNumber(innerOsmosisBalances[token1.denom]?.amount ?? 0).minus(
+        token1.denom === this.osmosisChainInfo.nativeToken.denom
+          ? expectedFeeNeededIfNative
+          : 0
+      ),
+      0
+    );
+
+    if (balance0Value.isZero() && balance1Value.isZero()) {
+      throw new Error(
+        `Your account doesn't have enough significant balance of ${token0.name} or ${token1.name} on Osmosis chain`
+      );
+    }
 
     // Calculate total value in terms of token1
     const balance0InToken1 = balance0Value.times(currentPrice);
@@ -65,7 +103,11 @@ export class TokenRebalancer {
       token1Excess.abs().div(targetAmount1).lt(tolerance)
     ) {
       console.log("Tokens already balanced within tolerance");
-      return currentBalances;
+      return {
+        token0: new TokenAmount(balance0Value, token0),
+        token1: new TokenAmount(balance1Value, token0),
+        osmosisBalances: innerOsmosisBalances,
+      };
     }
 
     // Determine which token we have excess of
@@ -77,8 +119,10 @@ export class TokenRebalancer {
         }`
       );
       return await this.handleExcessToken0(
-        currentBalances,
-        currentPrice
+        new TokenAmount(balance0Value, token0),
+        new TokenAmount(balance1Value, token1),
+        currentPrice,
+        innerOsmosisBalances
       );
     } else {
       // We have excess token1, need to swap some for token0
@@ -88,32 +132,34 @@ export class TokenRebalancer {
         }`
       );
       return await this.handleExcessToken1(
-        currentBalances,
-        currentPrice
+        new TokenAmount(balance0Value, token0),
+        new TokenAmount(balance1Value, token1),
+        currentPrice,
+        innerOsmosisBalances
       );
     }
   }
 
   private async handleExcessToken0(
-    currentBalances: TokenPairBalances,
-    osmosisPrice: string
-  ): Promise<TokenPairBalances> {
-    const token0 = currentBalances.token0.token;
-    const token1 = currentBalances.token1.token;
+    tokenAmount0: TokenAmount,
+    tokenAmount1: TokenAmount,
+    osmosisPrice: string,
+    osmosisBalances: Record<string, TokenAmount>
+  ): Promise<RebalancerOutput> {
+    const token0 = tokenAmount0.token;
+    const token1 = tokenAmount1.token;
 
     const osmosisAddress = await getSignerAddress(this.osmosisSigner);
     const archwayAddress = await getSignerAddress(this.archwaySigner);
-    const archwayChainInfo = findArchwayChainInfo(this.environment);
-    const osmosisChainInfo = findOsmosisChainInfo(this.environment);
 
     // Find Archway equivalents
     const token0Archway = findRegistryTokenEquivalentOnOtherChain(
       token0,
-      archwayChainInfo.id
+      this.archwayChainInfo.id
     );
     const token1Archway = findRegistryTokenEquivalentOnOtherChain(
       token1,
-      archwayChainInfo.id
+      this.archwayChainInfo.id
     );
 
     if (!token0Archway || !token1Archway) {
@@ -139,8 +185,8 @@ export class TokenRebalancer {
 
     // Calculate the exact amount to bridge to achieve 50/50 balance
     // Current balances:
-    const balance0 = BigNumber(currentBalances.token0.amount);
-    const balance1 = BigNumber(currentBalances.token1.amount);
+    const balance0 = BigNumber(tokenAmount0.amount);
+    const balance1 = BigNumber(tokenAmount1.amount);
 
     // We want: (balance0 - amountToBridge) * osmosisPrice = balance1 + (amountToBridge * boltPrice)
     // Solving for amountToBridge:
@@ -173,10 +219,28 @@ export class TokenRebalancer {
       console.log(
         "Amount we want to bridge and swap is smaller than the minimum out on bolt exchange"
       );
-      return currentBalances;
+      return {
+        token0: tokenAmount0,
+        token1: tokenAmount1,
+        osmosisBalances,
+      };
     }
 
     // Bridge to Archway
+    assertEnoughBalanceForFees(
+      osmosisBalances,
+      this.osmosisChainInfo.nativeToken,
+      BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(OSMOSIS_CREATE_LP_POSITION_FEE),
+      "bridging to Archway for rebalancing"
+    );
+    const archwayBalances = await this.getArchwayAccountBalances();
+    assertEnoughBalanceForFees(
+      archwayBalances,
+      this.archwayChainInfo.nativeToken,
+      BigNumber(ARCHWAY_BOLT_SWAP_FEE).plus(ARCHWAY_IBC_TRANSFER_FEE),
+      "bridge and swap on archway"
+    );
+
     console.log(
       `Bridging ${
         new TokenAmount(amountToBridge, token0).humanReadableAmount
@@ -185,15 +249,18 @@ export class TokenRebalancer {
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
       {
-        [osmosisChainInfo.id]: osmosisAddress,
-        [archwayChainInfo.id]: archwayAddress,
-        // TODO: fix hardcoded address conversion
+        [this.osmosisChainInfo.id]: osmosisAddress,
+        [this.archwayChainInfo.id]: archwayAddress,
         "noble-1": convertAddress(archwayAddress, "noble")!,
         "cosmoshub-4": convertAddress(archwayAddress, "cosmos")!,
+        celestia: convertAddress(archwayAddress, "celestia")!,
+        "axelar-dojo-1": convertAddress(archwayAddress, "axelar")!,
+        "akashnet-2": convertAddress(archwayAddress, "akash")!,
+        // TODO: implement a way to get injective singer/address conversion
       },
       {
         fromToken: token0,
-        toChainId: archwayChainInfo.id,
+        toChainId: this.archwayChainInfo.id,
         amount: amountToBridge.toFixed(0),
       }
     );
@@ -232,15 +299,18 @@ export class TokenRebalancer {
     const bridgeBackResult = await this.skipBridging.bridgeToken(
       this.archwaySigner,
       {
-        [osmosisChainInfo.id]: osmosisAddress,
-        [archwayChainInfo.id]: archwayAddress,
-        // TODO: fix hardcoded address conversion
+        [this.osmosisChainInfo.id]: osmosisAddress,
+        [this.archwayChainInfo.id]: archwayAddress,
         "noble-1": convertAddress(archwayAddress, "noble")!,
         "cosmoshub-4": convertAddress(archwayAddress, "cosmos")!,
+        celestia: convertAddress(archwayAddress, "celestia")!,
+        "axelar-dojo-1": convertAddress(archwayAddress, "axelar")!,
+        "akashnet-2": convertAddress(archwayAddress, "akash")!,
+        // TODO: implement a way to get injective singer/address conversion
       },
       {
         fromToken: token1Archway,
-        toChainId: osmosisChainInfo.id,
+        toChainId: this.osmosisChainInfo.id,
         amount: boltSwapOutput.toFixed(0),
       }
     );
@@ -248,40 +318,39 @@ export class TokenRebalancer {
     console.log(`Bridge back complete. Tx: ${bridgeBackResult.txHash}`);
 
     // Get updated balances
-    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
-    const newBalance0 = await osmosisAccount.getTokenAvailableBalance(
-      token0.denom
-    );
-    const newBalance1 = await osmosisAccount.getTokenAvailableBalance(
-      token1.denom
-    );
+    const newOsmosisBalances = await this.getOsmosisAccountBalances();
+    const newBalance0 =
+      newOsmosisBalances[token0.denom] ?? new TokenAmount(0, token0);
+    const newBalance1 =
+      newOsmosisBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     return {
       token0: newBalance0,
       token1: newBalance1,
+      osmosisBalances: newOsmosisBalances,
     };
   }
 
   private async handleExcessToken1(
-    currentBalances: TokenPairBalances,
-    osmosisPrice: string
-  ): Promise<TokenPairBalances> {
-    const token0 = currentBalances.token0.token;
-    const token1 = currentBalances.token1.token;
+    tokenAmount0: TokenAmount,
+    tokenAmount1: TokenAmount,
+    osmosisPrice: string,
+    osmosisBalances: Record<string, TokenAmount>
+  ): Promise<RebalancerOutput> {
+    const token0 = tokenAmount0.token;
+    const token1 = tokenAmount1.token;
 
     const archwayAddress = await getSignerAddress(this.archwaySigner);
     const osmosisAddress = await getSignerAddress(this.osmosisSigner);
-    const archwayChainInfo = findArchwayChainInfo(this.environment);
-    const osmosisChainInfo = findOsmosisChainInfo(this.environment);
 
     // Find Archway equivalents
     const token0Archway = findRegistryTokenEquivalentOnOtherChain(
       token0,
-      archwayChainInfo.id
+      this.archwayChainInfo.id
     );
     const token1Archway = findRegistryTokenEquivalentOnOtherChain(
       token1,
-      archwayChainInfo.id
+      this.archwayChainInfo.id
     );
 
     if (!token0Archway || !token1Archway) {
@@ -307,8 +376,8 @@ export class TokenRebalancer {
 
     // Calculate the exact amount to bridge to achieve 50/50 balance
     // Current balances:
-    const balance0 = BigNumber(currentBalances.token0.amount);
-    const balance1 = BigNumber(currentBalances.token1.amount);
+    const balance0 = BigNumber(tokenAmount0.amount);
+    const balance1 = BigNumber(tokenAmount1.amount);
 
     // We want: (balance0 + amountToBridge / boltPrice) * osmosisPrice = balance1 - amountToBridge
     // Solving for amountToBridge:
@@ -342,10 +411,28 @@ export class TokenRebalancer {
       console.log(
         "Amount we want to bridge and swap is smaller than the minimum out on bolt exchange"
       );
-      return currentBalances;
+      return {
+        token0: tokenAmount0,
+        token1: tokenAmount1,
+        osmosisBalances,
+      };
     }
 
     // Bridge to Archway
+    assertEnoughBalanceForFees(
+      osmosisBalances,
+      this.osmosisChainInfo.nativeToken,
+      BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(OSMOSIS_CREATE_LP_POSITION_FEE),
+      "bridging to Archway for rebalancing"
+    );
+    const archwayBalances = await this.getArchwayAccountBalances();
+    assertEnoughBalanceForFees(
+      archwayBalances,
+      this.archwayChainInfo.nativeToken,
+      BigNumber(ARCHWAY_BOLT_SWAP_FEE).plus(ARCHWAY_IBC_TRANSFER_FEE),
+      "bridge and swap on archway"
+    );
+
     console.log(
       `Bridging ${
         new TokenAmount(amountToBridge, token1).humanReadableAmount
@@ -354,15 +441,18 @@ export class TokenRebalancer {
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
       {
-        [osmosisChainInfo.id]: osmosisAddress,
-        [archwayChainInfo.id]: archwayAddress,
-        // TODO: fix hardcoded address conversion
+        [this.osmosisChainInfo.id]: osmosisAddress,
+        [this.archwayChainInfo.id]: archwayAddress,
         "noble-1": convertAddress(archwayAddress, "noble")!,
         "cosmoshub-4": convertAddress(archwayAddress, "cosmos")!,
+        celestia: convertAddress(archwayAddress, "celestia")!,
+        "axelar-dojo-1": convertAddress(archwayAddress, "axelar")!,
+        "akashnet-2": convertAddress(archwayAddress, "akash")!,
+        // TODO: implement a way to get injective singer/address conversion
       },
       {
         fromToken: token1,
-        toChainId: archwayChainInfo.id,
+        toChainId: this.archwayChainInfo.id,
         amount: amountToBridge.toFixed(0),
       }
     );
@@ -401,15 +491,18 @@ export class TokenRebalancer {
     const bridgeBackResult = await this.skipBridging.bridgeToken(
       this.archwaySigner,
       {
-        [osmosisChainInfo.id]: osmosisAddress,
-        [archwayChainInfo.id]: archwayAddress,
-        // TODO: fix hardcoded address conversion
+        [this.osmosisChainInfo.id]: osmosisAddress,
+        [this.archwayChainInfo.id]: archwayAddress,
         "noble-1": convertAddress(archwayAddress, "noble")!,
         "cosmoshub-4": convertAddress(archwayAddress, "cosmos")!,
+        celestia: convertAddress(archwayAddress, "celestia")!,
+        "axelar-dojo-1": convertAddress(archwayAddress, "axelar")!,
+        "akashnet-2": convertAddress(archwayAddress, "akash")!,
+        // TODO: implement a way to get injective singer/address conversion
       },
       {
         fromToken: token0Archway,
-        toChainId: osmosisChainInfo.id,
+        toChainId: this.osmosisChainInfo.id,
         amount: boltSwapOutput.toFixed(0),
       }
     );
@@ -417,17 +510,32 @@ export class TokenRebalancer {
     console.log(`Bridge back complete. Tx: ${bridgeBackResult.txHash}`);
 
     // Get updated balances
-    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
-    const newBalance0 = await osmosisAccount.getTokenAvailableBalance(
-      token0.denom
-    );
-    const newBalance1 = await osmosisAccount.getTokenAvailableBalance(
-      token1.denom
-    );
+    const newOsmosisBalances = await this.getOsmosisAccountBalances();
+    const newBalance0 =
+      newOsmosisBalances[token0.denom] ?? new TokenAmount(0, token0);
+    const newBalance1 =
+      newOsmosisBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     return {
       token0: newBalance0,
       token1: newBalance1,
+      osmosisBalances: newOsmosisBalances,
     };
+  }
+
+  private async getArchwayAccountBalances(): Promise<
+    Record<string, TokenAmount>
+  > {
+    const archwayAddress = await getSignerAddress(this.archwaySigner);
+    const archwayAccount = new ArchwayAccount(archwayAddress, this.environment);
+    return await archwayAccount.getAvailableBalances();
+  }
+
+  private async getOsmosisAccountBalances(): Promise<
+    Record<string, TokenAmount>
+  > {
+    const osmosisAddress = await getSignerAddress(this.osmosisSigner);
+    const osmosisAccount = new OsmosisAccount(osmosisAddress, this.environment);
+    return await osmosisAccount.getAvailableBalances();
   }
 }

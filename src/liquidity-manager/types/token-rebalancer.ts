@@ -10,7 +10,8 @@ export type TokenRebalancerConfig = {
   skipBridging: SkipBridging;
 };
 
-export type TokenPairBalances = {
+export type RebalancerOutput = {
   token0: TokenAmount;
   token1: TokenAmount;
+  osmosisBalances: Record<string, TokenAmount>;
 };
