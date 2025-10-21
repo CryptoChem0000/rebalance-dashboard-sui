@@ -392,6 +392,14 @@ export class LiquidityManager {
       tokenMinAmount1: "0",
     });
 
+    console.log(
+      `Actual deposited amounts: ${
+        new TokenAmount(result.amount0, token0).humanReadableAmount
+      } ${token0.name}, ${
+        new TokenAmount(result.amount1, token1).humanReadableAmount
+      } ${token1.name}`
+    );
+
     this.database.addTransaction({
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,

@@ -116,7 +116,9 @@ export class OsmosisCLPool {
           sender,
           lowerTick: BigInt(params.lowerTick),
           upperTick: BigInt(params.upperTick),
-          tokensProvided: params.tokensProvided,
+          tokensProvided: [...params.tokensProvided].sort((a, b) =>
+            a.denom.localeCompare(b.denom)
+          ),
           tokenMinAmount0: params.tokenMinAmount0,
           tokenMinAmount1: params.tokenMinAmount1,
         }
