@@ -11,6 +11,7 @@ import {
 
 import {
   CreatePoolParams,
+  CreatePoolResponse,
   Environment,
   OsmosisPoolManagerParams,
   OsmosisQueryClient,
@@ -88,7 +89,7 @@ export class OsmosisPoolManager {
     params: CreatePoolParams,
     signer?: OfflineSigner,
     signingClient?: OsmosisSigningClient
-  ): Promise<OsmosisCLPool> {
+  ): Promise<CreatePoolResponse> {
     const queryClient = await this.getQueryClient();
     const signingClientResult = await this.getSignerWithSigningClient(
       signer,

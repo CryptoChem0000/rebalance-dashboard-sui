@@ -74,14 +74,15 @@ export class LiquidityManager {
       params.restEndpointsOverride
     );
 
+    this.database = params.database;
+
     this.tokenRebalancer = new TokenRebalancer({
       archwaySigner: this.archwaySigner,
       osmosisSigner: this.osmosisSigner,
       environment: this.environment,
       skipBridging: this.skipBridging,
+      database: params.database,
     });
-
-    this.database = params.database;
   }
 
   static async make(
@@ -245,7 +246,7 @@ export class LiquidityManager {
   private async createPool(): Promise<OsmosisCLPool> {
     const poolConfig = this.config.osmosisPool;
 
-    const pool = await this.poolManager.createOsmosisCLPool(
+    const result = await this.poolManager.createOsmosisCLPool(
       {
         token0: poolConfig.token0,
         token1: poolConfig.token1,
@@ -256,11 +257,21 @@ export class LiquidityManager {
       this.osmosisSigner
     );
 
+    this.database.addTransaction({
+      signerAddress: this.osmosisAddress,
+      chainId: this.osmosisChainInfo.id,
+      transactionType: TransactionType.CREATE_POOL,
+      gasFeeAmount: result.gasFees?.amount,
+      gasFeeToken: result.gasFees?.denom,
+      txHash: result.txHash,
+      successful: true,
+    });
+
     // Update config with new pool ID
-    this.config.osmosisPool.id = pool.poolId;
+    this.config.osmosisPool.id = result.pool.poolId;
     await this.saveConfig();
 
-    return pool;
+    return result.pool;
   }
 
   private async updatePoolInfoConfigFile(
@@ -380,6 +391,7 @@ export class LiquidityManager {
       tokenMinAmount0: "0",
       tokenMinAmount1: "0",
     });
+
     this.database.addTransaction({
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,
@@ -388,9 +400,11 @@ export class LiquidityManager {
       inputToken: token0.denom,
       secondInputAmount: result.amount1,
       secondInputToken: token1.denom,
-      txHash: result.txOutput.transactionHash,
+      gasFeeAmount: result.gasFees?.amount,
+      gasFeeToken: result.gasFees?.denom,
+      txHash: result.txHash,
       successful: true,
-    })
+    });
 
     // Update config with position ID
     this.config.osmosisPosition.id = result.positionId;
@@ -474,6 +488,20 @@ export class LiquidityManager {
     const result = await pool.withdrawPosition({
       positionId: this.config.osmosisPosition.id,
       liquidityAmount: positionInfo.position.liquidity,
+    });
+
+    this.database.addTransaction({
+      signerAddress: this.osmosisAddress,
+      chainId: this.osmosisChainInfo.id,
+      transactionType: TransactionType.WITHDRAW_POSITION,
+      inputAmount: result.amount0,
+      inputToken: token0.denom,
+      secondInputAmount: result.amount1,
+      secondInputToken: token1.denom,
+      gasFeeAmount: result.gasFees?.amount,
+      gasFeeToken: result.gasFees?.denom,
+      txHash: result.txHash,
+      successful: true,
     });
 
     const amount0Withdrawn = new TokenAmount(result.amount0, token0);

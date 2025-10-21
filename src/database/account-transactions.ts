@@ -64,10 +64,10 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         second_input_token VARCHAR(42),
         output_amount VARCHAR(78),
         output_token VARCHAR(42),
-        gas_fees_amount VARCHAR(78),
-        gas_fees_token VARCHAR(42),
+        gas_fee_amount VARCHAR(78),
+        gas_fee_token VARCHAR(42),
         destination_address VARCHAR(42),
-        destination_chain_id INTEGER,
+        destination_chain_id VARCHAR(42),
         tx_hash VARCHAR(66) NOT NULL,
         successful BOOLEAN NOT NULL,
         error TEXT,
@@ -101,13 +101,14 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     this.insertStmt = this.db.prepare(`
       INSERT INTO account_transactions (
         signer_address, chain_id, transaction_type, input_amount, input_token,
-        second_input_amount, second_input_token, output_amount, output_token, gas_fees_amount, gas_fees_token,
-        destination_address, destination_chain_id, tx_hash, successful, error, timestamp
+        second_input_amount, second_input_token, output_amount, output_token,
+        gas_fee_amount, gas_fee_token, destination_address, destination_chain_id,
+        tx_hash, successful, error, timestamp
       ) VALUES (
         @signerAddress, @chainId, @transactionType, @inputAmount, @inputToken,
-        @secondInputAmount, @secondInputToken, @outputAmount, @outputToken, @gasFeesAmount, @gasFeesToken,
-        @destinationAddress, @destinationChainId, @txHash, @successful, @error,
-        COALESCE(@timestamp, strftime('%s', 'now'))
+        @secondInputAmount, @secondInputToken, @outputAmount, @outputToken,
+        @gasFeeAmount, @gasFeeToken, @destinationAddress, @destinationChainId,
+        @txHash, @successful, @error, COALESCE(@timestamp, strftime('%s', 'now'))
       )
       ON CONFLICT(tx_hash, chain_id) DO UPDATE SET
         error = excluded.error,
@@ -148,8 +149,8 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       secondInputToken: row.second_input_token,
       outputAmount: row.output_amount,
       outputToken: row.output_token,
-      gasFeesAmount: row.gas_fees_amount,
-      gasFeesToken: row.gas_fees_token,
+      gasFeeAmount: row.gas_fee_amount,
+      gasFeeToken: row.gas_fee_token,
       destinationAddress: row.destination_address,
       destinationChainId: row.destination_chain_id,
       txHash: row.tx_hash,
@@ -171,8 +172,8 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       secondInputToken: tx.secondInputToken ? tx.secondInputToken : null,
       outputAmount: tx.outputAmount || null,
       outputToken: tx.outputToken ? tx.outputToken : null,
-      gasFeesAmount: tx.gasFeesAmount || null,
-      gasFeesToken: tx.gasFeesToken ? tx.gasFeesToken : null,
+      gasFeeAmount: tx.gasFeeAmount || null,
+      gasFeeToken: tx.gasFeeToken ? tx.gasFeeToken : null,
       destinationAddress: tx.destinationAddress ? tx.destinationAddress : null,
       destinationChainId: tx.destinationChainId || null,
       txHash: tx.txHash,

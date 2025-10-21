@@ -9,7 +9,9 @@ export type BridgeTokenParams = {
 };
 
 export type BridgeTokenResult = {
-  chainId: string;
+  destinationToken: RegistryToken;
+  destinationAddress: string;
   txHash: string;
+  chainId: string;
   status?: TransferStatus;
 };

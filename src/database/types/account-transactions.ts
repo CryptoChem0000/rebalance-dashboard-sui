@@ -17,10 +17,10 @@ export interface AccountTransaction {
   secondInputToken?: string | null;
   outputAmount?: string | null;
   outputToken?: string | null;
-  gasFeesAmount?: string | null;
-  gasFeesToken?: string | null;
+  gasFeeAmount?: string | null;
+  gasFeeToken?: string | null;
   destinationAddress?: string | null;
-  destinationChainId?: number | null;
+  destinationChainId?: string | null;
   txHash: string;
   successful: boolean;
   error?: string | null;
