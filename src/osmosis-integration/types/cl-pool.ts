@@ -1,13 +1,6 @@
 import { Coin } from "@cosmjs/proto-signing";
-import { DeliverTxResponse } from "osmojs";
-
-export type CreatePoolParams = {
-  token0: string;
-  token1: string;
-  tickSpacing: AuthorizedTickSpacing;
-  spreadFactor: AuthorizedSpreadFactors;
-  environment?: "mainnet" | "testnet";
-};
+import { MsgWithdrawPositionResponse } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
+import type { OsmosisCLPool } from "../osmosis-cl-pool";
 
 // TODO: load from chain and validate on pool creation
 export type AuthorizedTickSpacing = 1 | 10 | 100 | 1000;
@@ -22,6 +15,20 @@ export type AuthorizedSpreadFactors =
   // | "10000000000000000" // 1%
   // | "25000000000000000"; // 2.5%
   0 | 0.0001 | 0.0005 | 0.001 | 0.002 | 0.003 | 0.005 | 0.01 | 0.025;
+
+export type CreatePoolParams = {
+  token0: string;
+  token1: string;
+  tickSpacing: AuthorizedTickSpacing;
+  spreadFactor: AuthorizedSpreadFactors;
+  environment?: "mainnet" | "testnet";
+};
+
+export type CreatePoolResponse = {
+  pool: OsmosisCLPool;
+  txHash: string;
+  gasFees?: Coin;
+};
 
 export type CreatePositionParams = {
   lowerTick: string;
@@ -38,12 +45,18 @@ export type CreatePositionResponse = {
   liquidityCreated: string;
   lowerTick: string;
   upperTick: string;
-  txOutput: DeliverTxResponse;
+  txHash: string;
+  gasFees?: Coin;
 };
 
 export type WithdrawPositionParams = {
   positionId: string;
   liquidityAmount: string;
+};
+
+export type WithdrawPositionResponse = MsgWithdrawPositionResponse & {
+  txHash: string;
+  gasFees?: Coin;
 };
 
 export type PoolInfoResponse = {

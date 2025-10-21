@@ -12,12 +12,13 @@ import { osmosis } from "osmojs";
 import { getPairPriceOnOsmosis } from "../prices";
 import { findOsmosisTokensMap } from "../registry";
 import { OsmosisTickMath } from "./tick-math";
-import { getSignerAddress } from "../utils";
+import { extractGasFees, getSignerAddress } from "../utils";
 import { simulateFees } from "./utils";
 
 import {
   AuthorizedTickSpacing,
   CreatePoolParams,
+  CreatePoolResponse,
   CreatePositionParams,
   CreatePositionResponse,
   OsmosisQueryClient,
@@ -26,6 +27,7 @@ import {
   PositionInfoResponse,
   PositionRangeResult,
   WithdrawPositionParams,
+  WithdrawPositionResponse,
 } from "./types";
 
 export class OsmosisCLPool {
@@ -51,7 +53,7 @@ export class OsmosisCLPool {
     signingClient: OsmosisSigningClient,
     params: CreatePoolParams,
     memo: string = ""
-  ): Promise<OsmosisCLPool> {
+  ): Promise<CreatePoolResponse> {
     const sender = await getSignerAddress(signer);
 
     const msg =
@@ -84,7 +86,7 @@ export class OsmosisCLPool {
 
     const newPoolId = BigNumber(parsedResponse.poolId).toFixed();
 
-    return new OsmosisCLPool(
+    const pool = new OsmosisCLPool(
       newPoolId,
       queryClient,
       signer,
@@ -93,6 +95,12 @@ export class OsmosisCLPool {
       params.token0,
       params.token1
     );
+
+    return {
+      pool,
+      txHash: response.transactionHash,
+      gasFees: extractGasFees(response),
+    };
   }
 
   async createPosition(
@@ -138,14 +146,15 @@ export class OsmosisCLPool {
       liquidityCreated: parsedResponse.liquidityCreated,
       lowerTick: BigNumber(parsedResponse.lowerTick).toFixed(),
       upperTick: BigNumber(parsedResponse.upperTick).toFixed(),
-      txOutput: response,
+      txHash: response.transactionHash,
+      gasFees: extractGasFees(response),
     };
   }
 
   async withdrawPosition(
     params: WithdrawPositionParams,
     memo: string = ""
-  ): Promise<MsgWithdrawPositionResponse> {
+  ): Promise<WithdrawPositionResponse> {
     const sender = await getSignerAddress(this.signer);
 
     const msg =
@@ -178,7 +187,15 @@ export class OsmosisCLPool {
       );
     }
 
-    return MsgWithdrawPositionResponse.decode(response.msgResponses[0].value);
+    const parsedResponse = MsgWithdrawPositionResponse.decode(
+      response.msgResponses[0].value
+    );
+
+    return {
+      ...parsedResponse,
+      txHash: response.transactionHash,
+      gasFees: extractGasFees(response),
+    };
   }
 
   async getPoolInfo(): Promise<PoolInfoResponse> {
