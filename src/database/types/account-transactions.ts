@@ -20,7 +20,7 @@ export interface AccountTransaction {
   gasFeeAmount?: string | null;
   gasFeeToken?: string | null;
   destinationAddress?: string | null;
-  destinationChainId?: number | null;
+  destinationChainId?: string | null;
   txHash: string;
   successful: boolean;
   error?: string | null;

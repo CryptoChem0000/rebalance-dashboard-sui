@@ -128,6 +128,8 @@ export class SkipBridging {
           txHash,
           chainId,
           status,
+          destinationToken,
+          destinationAddress: userAddresses[userAddresses.length - 1]!.address,
         };
       },
       onValidateGasBalance: async (validation) => {

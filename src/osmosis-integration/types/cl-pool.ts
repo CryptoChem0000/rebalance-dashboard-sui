@@ -1,5 +1,6 @@
 import { Coin } from "@cosmjs/proto-signing";
 import { MsgWithdrawPositionResponse } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
+
 import type { OsmosisCLPool } from "../osmosis-cl-pool";
 
 // TODO: load from chain and validate on pool creation

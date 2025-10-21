@@ -74,14 +74,15 @@ export class LiquidityManager {
       params.restEndpointsOverride
     );
 
+    this.database = params.database;
+
     this.tokenRebalancer = new TokenRebalancer({
       archwaySigner: this.archwaySigner,
       osmosisSigner: this.osmosisSigner,
       environment: this.environment,
       skipBridging: this.skipBridging,
+      database: params.database,
     });
-
-    this.database = params.database;
   }
 
   static async make(
