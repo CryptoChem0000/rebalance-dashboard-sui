@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "path";
 
 import { getWorkingDirectory } from "../utils";
+
 import {
   AccountTransaction,
   TransactionRepository,
@@ -14,7 +15,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
 
   // Prepared statements for better performance
   private insertStmt!: Database.Statement<AccountTransaction>;
-  private getByTxHashStmt!: Database.Statement<[string, number]>;
+  private getByTxHashStmt!: Database.Statement<[string, string]>;
   private getByAccountStmt!: Database.Statement<[string, number, number]>;
   private getByTypeStmt!: Database.Statement<[string, string, number]>;
 
@@ -40,7 +41,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
 
     const finalPath = path.join(
       databaseDir,
-      filename || "account_transactions.db"
+      `${filename}.db` || "account_transactions.db"
     );
 
     return new SQLiteTransactionRepository(finalPath, options);
@@ -64,16 +65,19 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         second_input_token VARCHAR(42),
         output_amount VARCHAR(78),
         output_token VARCHAR(42),
+        second_output_amount VARCHAR(78),
+        second_output_token VARCHAR(42),
         gas_fee_amount VARCHAR(78),
         gas_fee_token VARCHAR(42),
         destination_address VARCHAR(42),
         destination_chain_id VARCHAR(42),
         tx_hash VARCHAR(66) NOT NULL,
+        tx_action_index INTEGER NOT NULL DEFAULT 0,
         successful BOOLEAN NOT NULL,
         error TEXT,
         timestamp BIGINT NOT NULL DEFAULT (strftime('%s', 'now')),
         
-        PRIMARY KEY (tx_hash, chain_id)
+        PRIMARY KEY (chain_id, tx_hash, tx_action_index)
       )
     `);
 
@@ -93,6 +97,9 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       
       CREATE INDEX IF NOT EXISTS idx_chain_id 
       ON account_transactions(chain_id, timestamp DESC);
+      
+      CREATE INDEX IF NOT EXISTS idx_chain_tx_hash 
+      ON account_transactions(chain_id, tx_hash);
     `);
   }
 
@@ -100,37 +107,55 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     // Insert statement using named parameters for clarity
     this.insertStmt = this.db.prepare(`
       INSERT INTO account_transactions (
-        signer_address, chain_id, transaction_type, input_amount, input_token,
-        second_input_amount, second_input_token, output_amount, output_token,
+        signer_address, chain_id, transaction_type,
+        input_amount, input_token, second_input_amount, second_input_token,
+        output_amount, output_token, second_output_amount, second_output_token,
         gas_fee_amount, gas_fee_token, destination_address, destination_chain_id,
-        tx_hash, successful, error, timestamp
+        tx_hash, tx_action_index, successful, error, timestamp
       ) VALUES (
-        @signerAddress, @chainId, @transactionType, @inputAmount, @inputToken,
-        @secondInputAmount, @secondInputToken, @outputAmount, @outputToken,
+        @signerAddress, @chainId, @transactionType,
+        @inputAmount, @inputToken, @secondInputAmount, @secondInputToken,
+        @outputAmount, @outputToken, @secondOutputAmount, @secondOutputToken,
         @gasFeeAmount, @gasFeeToken, @destinationAddress, @destinationChainId,
-        @txHash, @successful, @error, COALESCE(@timestamp, strftime('%s', 'now'))
+        @txHash, COALESCE(@txActionIndex, 0), @successful, @error, COALESCE(@timestamp, strftime('%s', 'now'))
       )
-      ON CONFLICT(tx_hash, chain_id) DO UPDATE SET
+      ON CONFLICT(chain_id, tx_hash, tx_action_index) DO UPDATE SET
+        signer_address = excluded.signer_address,
+        transaction_type = excluded.transaction_type,
+        input_amount = excluded.input_amount,
+        input_token = excluded.input_token,
+        second_input_amount = excluded.second_input_amount,
+        second_input_token = excluded.second_input_token,
+        output_amount = excluded.output_amount,
+        output_token = excluded.output_token,
+        second_output_amount = excluded.second_output_amount,
+        second_output_token = excluded.second_output_token,
+        gas_fee_amount = excluded.gas_fee_amount,
+        gas_fee_token = excluded.gas_fee_token,
+        destination_address = excluded.destination_address,
+        destination_chain_id = excluded.destination_chain_id,
+        successful = excluded.successful,
         error = excluded.error,
-        successful = excluded.successful
+        timestamp = excluded.timestamp
     `);
 
     this.getByTxHashStmt = this.db.prepare(`
       SELECT * FROM account_transactions 
       WHERE tx_hash = ? AND chain_id = ?
+      ORDER BY tx_action_index
     `);
 
     this.getByAccountStmt = this.db.prepare(`
       SELECT * FROM account_transactions 
       WHERE signer_address = ? 
-      ORDER BY timestamp DESC 
+      ORDER BY timestamp DESC, tx_action_index
       LIMIT ? OFFSET ?
     `);
 
     this.getByTypeStmt = this.db.prepare(`
       SELECT * FROM account_transactions 
       WHERE signer_address = ? AND transaction_type = ?
-      ORDER BY timestamp DESC 
+      ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
   }
@@ -149,11 +174,14 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       secondInputToken: row.second_input_token,
       outputAmount: row.output_amount,
       outputToken: row.output_token,
+      secondOutputAmount: row.second_output_amount,
+      secondOutputToken: row.second_output_token,
       gasFeeAmount: row.gas_fee_amount,
       gasFeeToken: row.gas_fee_token,
       destinationAddress: row.destination_address,
       destinationChainId: row.destination_chain_id,
       txHash: row.tx_hash,
+      txActionIndex: row.tx_action_index,
       successful: Boolean(row.successful),
       error: row.error,
       timestamp: row.timestamp,
@@ -167,16 +195,19 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       chainId: tx.chainId,
       transactionType: tx.transactionType,
       inputAmount: tx.inputAmount || null,
-      inputToken: tx.inputToken ? tx.inputToken : null,
+      inputToken: tx.inputToken || null,
       secondInputAmount: tx.secondInputAmount || null,
-      secondInputToken: tx.secondInputToken ? tx.secondInputToken : null,
+      secondInputToken: tx.secondInputToken || null,
       outputAmount: tx.outputAmount || null,
-      outputToken: tx.outputToken ? tx.outputToken : null,
+      outputToken: tx.outputToken || null,
+      secondOutputAmount: tx.secondOutputAmount || null,
+      secondOutputToken: tx.secondOutputToken || null,
       gasFeeAmount: tx.gasFeeAmount || null,
-      gasFeeToken: tx.gasFeeToken ? tx.gasFeeToken : null,
-      destinationAddress: tx.destinationAddress ? tx.destinationAddress : null,
+      gasFeeToken: tx.gasFeeToken || null,
+      destinationAddress: tx.destinationAddress || null,
       destinationChainId: tx.destinationChainId || null,
       txHash: tx.txHash,
+      txActionIndex: tx.txActionIndex ?? 0,
       successful: tx.successful ? 1 : 0,
       error: tx.error || null,
       timestamp: tx.timestamp || null,
@@ -197,9 +228,14 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     insert(txs);
   }
 
-  getTransaction(txHash: string, chainId: number): AccountTransaction | null {
+  getTransaction(txHash: string, chainId: string): AccountTransaction | null {
     const row = this.getByTxHashStmt.get(txHash, chainId);
     return this.rowToTransaction(row);
+  }
+
+  getTransactionEntries(txHash: string, chainId: string): AccountTransaction[] {
+    const rows = this.getByTxHashStmt.all(txHash, chainId);
+    return rows.map((row) => this.rowToTransaction(row)!);
   }
 
   getAccountTransactions(
@@ -231,7 +267,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       SELECT * FROM account_transactions 
       WHERE signer_address = ? 
       AND transaction_type IN (${placeholders})
-      ORDER BY timestamp DESC 
+      ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
 
@@ -302,7 +338,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     const query = this.db.prepare(`
       SELECT * FROM account_transactions
       WHERE signer_address = ? AND successful = 0
-      ORDER BY timestamp DESC
+      ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
 

@@ -27,9 +27,12 @@ export const assertEnoughBalanceForFees = (
 export const extractGasFees = (
   txResponse: DeliverTxResponse
 ): Coin | undefined => {
+  const TRANSACTION_EVENT_TYPE = "tx";
+  const FEE_EVENT_ATTRIBUTE_KEY = "fee";
+
   const eventEntry = txResponse.events
-    .find((item) => item.type === "tx")
-    ?.attributes.find((item) => item.key === "fee")?.value;
+    .find((item) => item.type === TRANSACTION_EVENT_TYPE)
+    ?.attributes.find((item) => item.key === FEE_EVENT_ATTRIBUTE_KEY)?.value;
 
   return eventEntry ? parseStringToCoin(eventEntry) : undefined;
 };

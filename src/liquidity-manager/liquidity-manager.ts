@@ -498,19 +498,37 @@ export class LiquidityManager {
       liquidityAmount: positionInfo.position.liquidity,
     });
 
-    this.database.addTransaction({
-      signerAddress: this.osmosisAddress,
-      chainId: this.osmosisChainInfo.id,
-      transactionType: TransactionType.WITHDRAW_POSITION,
-      inputAmount: result.amount0,
-      inputToken: token0.denom,
-      secondInputAmount: result.amount1,
-      secondInputToken: token1.denom,
-      gasFeeAmount: result.gasFees?.amount,
-      gasFeeToken: result.gasFees?.denom,
-      txHash: result.txHash,
-      successful: true,
-    });
+    this.database.addTransactionBatch([
+      {
+        signerAddress: this.osmosisAddress,
+        chainId: this.osmosisChainInfo.id,
+        transactionType: TransactionType.WITHDRAW_POSITION,
+        outputAmount: result.amount0,
+        outputToken: token0.denom,
+        secondOutputAmount: result.amount1,
+        secondOutputToken: token1.denom,
+        gasFeeAmount: result.gasFees?.amount,
+        gasFeeToken: result.gasFees?.denom,
+        txHash: result.txHash,
+        successful: true,
+      },
+      ...(result.rewardsCollected?.length
+        ? [
+            {
+              signerAddress: this.osmosisAddress,
+              chainId: this.osmosisChainInfo.id,
+              transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
+              outputAmount: result.rewardsCollected[0]?.amount,
+              outputToken: result.rewardsCollected[0]?.denom,
+              secondOutputAmount: result.rewardsCollected[1]?.amount,
+              secondOutputToken: result.rewardsCollected[1]?.denom,
+              txHash: result.txHash,
+              txActionIndex: 1,
+              successful: true,
+            },
+          ]
+        : []),
+    ]);
 
     const amount0Withdrawn = new TokenAmount(result.amount0, token0);
     const amount1Withdrawn = new TokenAmount(result.amount1, token1);
@@ -518,6 +536,29 @@ export class LiquidityManager {
     console.log(
       `Withdrew ${amount0Withdrawn.humanReadableAmount} ${token0.name} and ${amount1Withdrawn.humanReadableAmount} ${token1.name}`
     );
+
+    if (result.rewardsCollected?.length) {
+      const amount0Rewards = new TokenAmount(
+        result.rewardsCollected[0]!.amount,
+        token0.denom === result.rewardsCollected[0]?.denom ? token0 : token1
+      );
+      const amount1Rewards = result.rewardsCollected[1]?.amount
+        ? new TokenAmount(
+            result.rewardsCollected[1].amount,
+            token0.denom === result.rewardsCollected[1].denom ? token0 : token1
+          )
+        : undefined;
+
+      console.log(
+        `Claimed ${amount0Rewards.humanReadableAmount} ${
+          amount0Rewards.token.name
+        } ${
+          amount1Rewards
+            ? `and ${amount1Rewards.humanReadableAmount} ${amount1Rewards.token.name}`
+            : ""
+        } in Spread Rewards`
+      );
+    }
 
     // Clear position ID from config
     this.config.osmosisPosition.id = "";

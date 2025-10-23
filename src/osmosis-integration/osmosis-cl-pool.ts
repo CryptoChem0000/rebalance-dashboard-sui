@@ -2,6 +2,7 @@ import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
 import { Pool } from "osmojs/osmosis/concentratedliquidity/v1beta1/pool";
 import {
+  MsgCollectSpreadRewardsResponse,
   MsgCreatePositionResponse,
   MsgWithdrawPositionResponse,
 } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
@@ -13,10 +14,12 @@ import { getPairPriceOnOsmosis } from "../prices";
 import { findOsmosisTokensMap } from "../registry";
 import { OsmosisTickMath } from "./tick-math";
 import { extractGasFees, getSignerAddress } from "../utils";
-import { simulateFees } from "./utils";
+import { extractRewardsCollected, simulateFees } from "./utils";
 
 import {
   AuthorizedTickSpacing,
+  CollectSpreadRewardsParams,
+  CollectSpreadRewardsResponse,
   CreatePoolParams,
   CreatePoolResponse,
   CreatePositionParams,
@@ -195,6 +198,7 @@ export class OsmosisCLPool {
 
     return {
       ...parsedResponse,
+      rewardsCollected: extractRewardsCollected(response),
       txHash: response.transactionHash,
       gasFees: extractGasFees(response),
     };

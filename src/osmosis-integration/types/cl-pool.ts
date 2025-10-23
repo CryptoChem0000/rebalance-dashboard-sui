@@ -1,5 +1,8 @@
 import { Coin } from "@cosmjs/proto-signing";
-import { MsgWithdrawPositionResponse } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
+import {
+  MsgCollectSpreadRewardsResponse,
+  MsgWithdrawPositionResponse,
+} from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
 
 import type { OsmosisCLPool } from "../osmosis-cl-pool";
 
@@ -56,6 +59,16 @@ export type WithdrawPositionParams = {
 };
 
 export type WithdrawPositionResponse = MsgWithdrawPositionResponse & {
+  rewardsCollected?: Coin[]
+  txHash: string;
+  gasFees?: Coin;
+};
+
+export type CollectSpreadRewardsParams = {
+  positions: string[];
+};
+
+export type CollectSpreadRewardsResponse = MsgCollectSpreadRewardsResponse & {
   txHash: string;
   gasFees?: Coin;
 };

@@ -2,6 +2,7 @@
 export enum TransactionType {
   BOLT_ARCHWAY_SWAP = "bolt_archway_swap",
   CREATE_POOL = "create_pool",
+  COLLECT_SPREAD_REWARDS = "collect_spread_rewards",
   CREATE_POSITION = "create_position",
   WITHDRAW_POSITION = "withdraw_position",
   IBC_TRANSFER = "ibc_transfer",
@@ -17,11 +18,14 @@ export interface AccountTransaction {
   secondInputToken?: string | null;
   outputAmount?: string | null;
   outputToken?: string | null;
+  secondOutputAmount?: string | null;
+  secondOutputToken?: string | null;
   gasFeeAmount?: string | null;
   gasFeeToken?: string | null;
   destinationAddress?: string | null;
   destinationChainId?: string | null;
   txHash: string;
+  txActionIndex?: number;
   successful: boolean;
   error?: string | null;
   timestamp?: number;
@@ -36,7 +40,8 @@ export interface AccountTransactionRow
 export interface TransactionRepository {
   addTransaction(tx: AccountTransaction): void;
   addTransactionBatch(txs: AccountTransaction[]): void;
-  getTransaction(txHash: string, chainId: number): AccountTransaction | null;
+  getTransaction(txHash: string, chainId: string): AccountTransaction | null;
+  getTransactionEntries(txHash: string, chainId: string): AccountTransaction[];
   getAccountTransactions(
     signerAddress: string,
     limit?: number,
@@ -44,7 +49,7 @@ export interface TransactionRepository {
   ): AccountTransaction[];
   getTransactionsByType(
     signerAddress: string,
-    transactionType: TransactionType, // Updated to use enum
+    transactionType: TransactionType,
     limit?: number
   ): AccountTransaction[];
   getAccountStats(signerAddress: string): any;
