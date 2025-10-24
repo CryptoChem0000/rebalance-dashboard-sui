@@ -1,4 +1,3 @@
-import { convertAddress } from "@archway-kit/utils";
 import { Coin, OfflineSigner } from "@cosmjs/proto-signing";
 import axios from "axios";
 import { BigNumber } from "bignumber.js";
@@ -17,6 +16,7 @@ import {
 } from "./constants";
 import { SQLiteTransactionRepository, TransactionType } from "../database";
 import { SkipBridging } from "../ibc-bridging";
+import { AbstractKeyStore } from "../key-manager";
 import { getPairPriceOnBoltArchway } from "../prices";
 import {
   findRegistryTokenEquivalentOnOtherChain,
@@ -25,12 +25,13 @@ import {
   RegistryToken,
   ChainInfo,
 } from "../registry";
-import { RebalancerOutput, TokenRebalancerConfig } from "./types";
 import {
   assertEnoughBalanceForFees,
   getSignerAddress,
   humanReadablePrice,
 } from "../utils";
+
+import { RebalancerOutput, TokenRebalancerConfig } from "./types";
 
 export class TokenRebalancer {
   private archwaySigner: OfflineSigner;
@@ -40,6 +41,7 @@ export class TokenRebalancer {
   private archwayChainInfo: ChainInfo;
   private osmosisChainInfo: ChainInfo;
   private database: SQLiteTransactionRepository;
+  private keyStore: AbstractKeyStore;
 
   constructor(config: TokenRebalancerConfig) {
     this.archwaySigner = config.archwaySigner;
@@ -49,6 +51,7 @@ export class TokenRebalancer {
     this.archwayChainInfo = findArchwayChainInfo(this.environment);
     this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
     this.database = config.database;
+    this.keyStore = config.keyStore;
   }
 
   async rebalanceTokensFor5050Deposit(
@@ -273,18 +276,6 @@ export class TokenRebalancer {
       "bridge and swap on archway"
     );
 
-    // Create address map for bridging
-    const addressMap = {
-      [this.osmosisChainInfo.id]: osmosisAddress,
-      [this.archwayChainInfo.id]: archwayAddress,
-      "noble-1": convertAddress(archwayAddress, "noble")!,
-      "cosmoshub-4": convertAddress(archwayAddress, "cosmos")!,
-      celestia: convertAddress(archwayAddress, "celestia")!,
-      "axelar-dojo-1": convertAddress(archwayAddress, "axelar")!,
-      "akashnet-2": convertAddress(archwayAddress, "akash")!,
-      // TODO: implement a way to get injective singer/address conversion
-    };
-
     // Bridge excess token to Archway
     console.log(
       `Bridging ${
@@ -293,7 +284,7 @@ export class TokenRebalancer {
     );
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
-      addressMap,
+      this.keyStore,
       {
         fromToken: excessToken,
         toChainId: this.archwayChainInfo.id,
@@ -374,7 +365,7 @@ export class TokenRebalancer {
 
     const bridgeBackResult = await this.skipBridging.bridgeToken(
       this.archwaySigner,
-      addressMap,
+      this.keyStore,
       {
         fromToken: targetTokenArchway,
         toChainId: this.osmosisChainInfo.id,

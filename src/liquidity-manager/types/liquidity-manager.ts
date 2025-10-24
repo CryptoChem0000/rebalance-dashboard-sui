@@ -2,6 +2,7 @@ import { OfflineSigner } from "@cosmjs/proto-signing";
 
 import { TokenAmount } from "../../account-balances";
 import { SQLiteTransactionRepository } from "../../database";
+import { AbstractKeyStore } from "../../key-manager";
 import {
   PoolInfoResponse,
   PositionInfoResponse,
@@ -23,16 +24,20 @@ export type Config = {
   };
 };
 
-export type LiquidityManagerConfig = {
+export type MakeLiquidityManagerParams = {
+  environment?: "mainnet" | "testnet";
+  rpcEndpointsOverride?: Record<string, string>;
+  restEndpointsOverride?: Record<string, string>;
+};
+
+export type LiquidityManagerConfig = MakeLiquidityManagerParams & {
   config: Config;
   configPath: string;
   archwaySigner: OfflineSigner;
   osmosisSigner: OfflineSigner;
   osmosisAddress: string;
-  environment?: "mainnet" | "testnet";
-  rpcEndpointsOverride?: Record<string, string>;
-  restEndpointsOverride?: Record<string, string>;
   database: SQLiteTransactionRepository;
+  keyStore: AbstractKeyStore;
 };
 
 export type PositionCreationResult = {

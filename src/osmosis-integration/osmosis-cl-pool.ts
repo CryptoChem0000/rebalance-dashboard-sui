@@ -2,7 +2,6 @@ import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
 import { Pool } from "osmojs/osmosis/concentratedliquidity/v1beta1/pool";
 import {
-  MsgCollectSpreadRewardsResponse,
   MsgCreatePositionResponse,
   MsgWithdrawPositionResponse,
 } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
@@ -18,8 +17,6 @@ import { extractRewardsCollected, simulateFees } from "./utils";
 
 import {
   AuthorizedTickSpacing,
-  CollectSpreadRewardsParams,
-  CollectSpreadRewardsResponse,
   CreatePoolParams,
   CreatePoolResponse,
   CreatePositionParams,

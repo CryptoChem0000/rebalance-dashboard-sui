@@ -3,6 +3,7 @@ import { OfflineSigner } from "@cosmjs/proto-signing";
 import { TokenAmount } from "../../account-balances";
 import { SQLiteTransactionRepository } from "../../database";
 import { SkipBridging } from "../../ibc-bridging";
+import { AbstractKeyStore } from "../../key-manager";
 
 export type TokenRebalancerConfig = {
   archwaySigner: OfflineSigner;
@@ -10,6 +11,7 @@ export type TokenRebalancerConfig = {
   environment: "mainnet" | "testnet";
   skipBridging: SkipBridging;
   database: SQLiteTransactionRepository;
+  keyStore: AbstractKeyStore;
 };
 
 export type RebalancerOutput = {

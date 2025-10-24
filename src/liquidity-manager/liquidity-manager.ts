@@ -1,4 +1,4 @@
-import { DirectSecp256k1HdWallet, OfflineSigner } from "@cosmjs/proto-signing";
+import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import path from "path";
@@ -10,7 +10,12 @@ import {
 } from "./constants";
 import { SQLiteTransactionRepository, TransactionType } from "../database";
 import { SkipBridging } from "../ibc-bridging";
-import { KeyManager, KeyStoreType } from "../key-manager";
+import {
+  AbstractKeyStore,
+  DEFAULT_KEY_NAME,
+  KeyManager,
+  KeyStoreType,
+} from "../key-manager";
 import {
   AuthorizedSpreadFactors,
   AuthorizedTickSpacing,
@@ -35,6 +40,7 @@ import {
 import {
   Config,
   LiquidityManagerConfig,
+  MakeLiquidityManagerParams,
   PositionCreationResult,
   RebalanceResult,
   StatusResponse,
@@ -53,6 +59,7 @@ export class LiquidityManager {
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
   private database: SQLiteTransactionRepository;
+  private keyStore: AbstractKeyStore;
 
   constructor(params: LiquidityManagerConfig) {
     this.config = params.config;
@@ -75,46 +82,40 @@ export class LiquidityManager {
     );
 
     this.database = params.database;
+    this.keyStore = params.keyStore;
 
     this.tokenRebalancer = new TokenRebalancer({
       archwaySigner: this.archwaySigner,
       osmosisSigner: this.osmosisSigner,
       environment: this.environment,
       skipBridging: this.skipBridging,
-      database: params.database,
+      database: this.database,
+      keyStore: this.keyStore,
     });
   }
 
   static async make(
-    params: Omit<
-      LiquidityManagerConfig,
-      | "config"
-      | "configPath"
-      | "osmosisSigner"
-      | "archwaySigner"
-      | "osmosisAddress"
-      | "database"
-    >
+    params: MakeLiquidityManagerParams
   ): Promise<LiquidityManager> {
     const workingDir = await getWorkingDirectory();
     const configPath = path.join(workingDir, "config.json");
     const configContent = await fs.readFile(configPath, "utf-8");
     const config = JSON.parse(configContent) as Config;
-    let mnemonic = await (
-      await KeyManager.create({ type: KeyStoreType.ENV_VARIABLE })
-    ).getKey("MNEMONIC");
+    const keyStore = await KeyManager.create({
+      type: KeyStoreType.ENV_VARIABLE,
+    });
 
-    const archwaySigner = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
-      prefix: findArchwayChainInfo(params.environment).prefix,
-    });
-    const osmosisSigner = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
-      prefix: findOsmosisChainInfo(params.environment).prefix,
-    });
+    const archwaySigner = await keyStore.getSigner(
+      DEFAULT_KEY_NAME,
+      findArchwayChainInfo(params.environment).prefix
+    );
+    const osmosisSigner = await keyStore.getSigner(
+      DEFAULT_KEY_NAME,
+      findOsmosisChainInfo(params.environment).prefix
+    );
     const osmosisAddress = await getSignerAddress(osmosisSigner);
 
     const database = await SQLiteTransactionRepository.make(osmosisAddress);
-
-    mnemonic = "";
 
     return new LiquidityManager({
       ...params,
@@ -124,6 +125,7 @@ export class LiquidityManager {
       config,
       configPath,
       database,
+      keyStore,
     });
   }
 

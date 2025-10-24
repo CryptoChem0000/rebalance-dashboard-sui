@@ -1,13 +1,14 @@
 import { Bip39, Random } from "@cosmjs/crypto";
 import { DirectSecp256k1HdWallet, OfflineSigner } from "@cosmjs/proto-signing";
+import { PrivateKey } from "@injectivelabs/sdk-ts";
 import dotenv from "dotenv";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 
-import { getWorkingDirectory } from "../../utils";
+import { getSignerAddress, getWorkingDirectory } from "../../utils";
 
 import { AbstractKeyStore } from "../types";
-import { join } from "node:path";
 
 /**
  * Environment variable-based key storage implementation.
@@ -129,6 +130,45 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
     });
 
     return wallet;
+  }
+
+  /**
+   * Get the address for the specified key and chain
+   *
+   * @param name - The environment variable name containing the mnemonic
+   * @param chainPrefix - The blockchain address prefix (defaults to "archway")
+   *                     Common prefixes: "cosmos", "osmo", "juno", "archway", "inj"
+   * @returns Promise resolving to the address string for the given key and chain
+   * @throws Error if the key is not found or the mnemonic is invalid
+   *
+   * @remarks
+   * Special handling for Injective (inj) chain which uses a different derivation path.
+   * For other chains, derives the address from the first account of the signer.
+   *
+   * @example
+   * ```typescript
+   * // Get Cosmos address
+   * const cosmosAddr = await keyStore.getAddress('WALLET_MAIN', 'cosmos');
+   * console.log('Cosmos address:', cosmosAddr);
+   *
+   * // Get Injective address (uses special derivation)
+   * const injAddr = await keyStore.getAddress('WALLET_MAIN', 'inj');
+   * console.log('Injective address:', injAddr);
+   * ```
+   */
+  async getAddress(
+    name: string,
+    chainPrefix: string = "archway"
+  ): Promise<string> {
+    if (chainPrefix === "inj") {
+      const mnemonic = await this.getKey(name);
+      const privateKey = PrivateKey.fromMnemonic(mnemonic);
+      const publicKey = privateKey.toPublicKey();
+      return publicKey.toAddress().address;
+    } else {
+      const signer = await this.getSigner(name, chainPrefix);
+      return getSignerAddress(signer);
+    }
   }
 
   /**

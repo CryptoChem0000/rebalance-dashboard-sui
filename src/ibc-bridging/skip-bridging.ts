@@ -4,8 +4,11 @@ import {
   route,
   setClientOptions,
   TransactionState,
+  UserAddress,
 } from "@skip-go/client";
 
+import { MapChainIdToPrefix } from "./constants";
+import { AbstractKeyStore, DEFAULT_KEY_NAME } from "../key-manager";
 import {
   ARCHWAY_MAINNET_CHAIN_INFO,
   ARCHWAY_TESTNET_CHAIN_INFO,
@@ -64,7 +67,7 @@ export class SkipBridging {
 
   async bridgeToken(
     signer: OfflineSigner,
-    addressesByChain: Record<string, string>,
+    keyStore: AbstractKeyStore,
     params: BridgeTokenParams
   ): Promise<BridgeTokenResult> {
     const destinationToken = findRegistryTokenEquivalentOnOtherChain(
@@ -90,16 +93,19 @@ export class SkipBridging {
       throw new Error("Bridging route not found");
     }
 
-    const userAddresses = bridgeRoute.requiredChainAddresses.map((chainId) => {
-      const foundAddress = addressesByChain[chainId];
-      if (!foundAddress) {
-        throw new Error(`Missing address for the chain ${chainId}`);
+    // Get all the required addresses
+    const userAddresses: UserAddress[] = [];
+    for (const chainId of bridgeRoute.requiredChainAddresses) {
+      if (!MapChainIdToPrefix[chainId]) {
+        throw new Error(`Missing config for the chain ${chainId}`);
       }
-      return {
-        chainId,
-        address: foundAddress,
-      };
-    });
+
+      const address = await keyStore.getAddress(
+        DEFAULT_KEY_NAME,
+        MapChainIdToPrefix[chainId]
+      );
+      userAddresses.push({ chainId, address });
+    }
 
     let result: BridgeTokenResult | undefined;
 

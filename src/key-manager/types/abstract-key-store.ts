@@ -26,6 +26,17 @@ export abstract class AbstractKeyStore<TStoredKey = unknown> {
   ): OfflineSigner | Promise<OfflineSigner>;
 
   /**
+   * Get the address for the specified key and chain
+   * @param name - The unique identifier for the key
+   * @param chainPrefix - The blockchain prefix (e.g., "cosmos", "osmo", "juno")
+   * @returns The address string for the given key and chain
+   */
+  abstract getAddress(
+    name: string,
+    chainPrefix: string
+  ): string | Promise<string>;
+
+  /**
    * Create a new key with the given name
    * @param name - The unique identifier for the new key
    * @returns The newly created key data
