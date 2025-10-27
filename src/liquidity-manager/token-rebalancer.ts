@@ -24,6 +24,8 @@ import {
   findOsmosisChainInfo,
   RegistryToken,
   ChainInfo,
+  findArchwayTokensMap,
+  findOsmosisTokensMap,
 } from "../registry";
 import {
   assertEnoughBalanceForFees,
@@ -39,7 +41,9 @@ export class TokenRebalancer {
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private archwayChainInfo: ChainInfo;
+  private archwayTokensMap: Record<string, RegistryToken>;
   private osmosisChainInfo: ChainInfo;
+  private osmosisTokensMap: Record<string, RegistryToken>;
   private database: SQLiteTransactionRepository;
   private keyStore: AbstractKeyStore;
 
@@ -49,7 +53,9 @@ export class TokenRebalancer {
     this.environment = config.environment;
     this.skipBridging = config.skipBridging;
     this.archwayChainInfo = findArchwayChainInfo(this.environment);
+    this.archwayTokensMap = findArchwayTokensMap(this.environment);
     this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
+    this.osmosisTokensMap = findOsmosisTokensMap(this.environment);
     this.database = config.database;
     this.keyStore = config.keyStore;
   }
@@ -302,13 +308,18 @@ export class TokenRebalancer {
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.IBC_TRANSFER,
       inputAmount: inputAmountString,
-      inputToken: excessToken.denom,
+      inputTokenDenom: excessToken.denom,
+      inputTokenName: excessToken.name,
       outputAmount: inputAmountString,
-      outputToken: bridgeResult.destinationToken.denom,
+      outputTokenDenom: bridgeResult.destinationToken.denom,
+      outputTokenName: bridgeResult.destinationToken.name,
       destinationAddress: bridgeResult.destinationAddress,
       destinationChainId: bridgeResult.destinationToken.chainId,
       gasFeeAmount: bridgeGasFees?.amount,
-      gasFeeToken: bridgeGasFees?.denom,
+      gasFeeTokenDenom: bridgeGasFees?.denom,
+      gasFeeTokenName: bridgeGasFees?.denom
+        ? this.osmosisTokensMap[bridgeGasFees.denom]?.name
+        : undefined,
       txHash: bridgeResult.txHash,
       successful: true,
     });
@@ -343,11 +354,16 @@ export class TokenRebalancer {
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.BOLT_ARCHWAY_SWAP,
       inputAmount: inputAmountString,
-      inputToken: excessTokenArchway.denom,
+      inputTokenDenom: excessTokenArchway.denom,
+      inputTokenName: excessTokenArchway.name,
       outputAmount: swapResult.amountOut,
-      outputToken: targetTokenArchway.denom,
+      outputTokenDenom: targetTokenArchway.denom,
+      outputTokenName: targetTokenArchway.name,
       gasFeeAmount: boltSwapGasFees?.amount,
-      gasFeeToken: boltSwapGasFees?.denom,
+      gasFeeTokenDenom: boltSwapGasFees?.denom,
+      gasFeeTokenName: boltSwapGasFees?.denom
+        ? this.archwayTokensMap[boltSwapGasFees.denom]?.name
+        : undefined,
       txHash: swapResult.txHash,
       successful: true,
     });
@@ -383,13 +399,18 @@ export class TokenRebalancer {
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.IBC_TRANSFER,
       inputAmount: boltSwapOutput.toFixed(0),
-      inputToken: targetTokenArchway.denom,
+      inputTokenDenom: targetTokenArchway.denom,
+      inputTokenName: targetTokenArchway.name,
       outputAmount: boltSwapOutput.toFixed(0),
-      outputToken: bridgeBackResult.destinationToken.denom,
+      outputTokenDenom: bridgeBackResult.destinationToken.denom,
+      outputTokenName: bridgeBackResult.destinationToken.name,
       destinationAddress: bridgeBackResult.destinationAddress,
       destinationChainId: bridgeBackResult.destinationToken.chainId,
       gasFeeAmount: bridgeBackGasFees?.amount,
-      gasFeeToken: bridgeBackGasFees?.denom,
+      gasFeeTokenDenom: bridgeBackGasFees?.denom,
+      gasFeeTokenName: bridgeBackGasFees?.denom
+        ? this.archwayTokensMap[bridgeBackGasFees.denom]?.name
+        : undefined,
       txHash: bridgeBackResult.txHash,
       successful: true,
     });

@@ -29,6 +29,7 @@ import {
   findArchwayChainInfo,
   findOsmosisChainInfo,
   findOsmosisTokensMap,
+  RegistryToken,
 } from "../registry";
 import { TokenRebalancer } from "./token-rebalancer";
 import {
@@ -55,6 +56,7 @@ export class LiquidityManager {
   private osmosisSigner: OfflineSigner;
   private osmosisAddress: string;
   private osmosisChainInfo: ChainInfo;
+  private osmosisTokensMap: Record<string, RegistryToken>;
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
@@ -69,6 +71,7 @@ export class LiquidityManager {
     this.osmosisAddress = params.osmosisAddress;
     this.environment = params.environment || "mainnet";
     this.osmosisChainInfo = findOsmosisChainInfo(this.environment);
+    this.osmosisTokensMap = findOsmosisTokensMap(this.environment);
 
     this.poolManager = new OsmosisPoolManager({
       environment: this.environment,
@@ -264,7 +267,10 @@ export class LiquidityManager {
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POOL,
       gasFeeAmount: result.gasFees?.amount,
-      gasFeeToken: result.gasFees?.denom,
+      gasFeeTokenDenom: result.gasFees?.denom,
+      gasFeeTokenName: result.gasFees?.denom
+        ? this.osmosisTokensMap[result.gasFees.denom]?.name
+        : undefined,
       txHash: result.txHash,
       successful: true,
     });
@@ -299,11 +305,8 @@ export class LiquidityManager {
     pool: OsmosisCLPool,
     osmosisBalances?: Record<string, TokenAmount>
   ): Promise<PositionCreationResult> {
-    // Get token registry
-    const tokenMap = findOsmosisTokensMap(this.environment);
-
-    const token0 = tokenMap[this.config.osmosisPool.token0];
-    const token1 = tokenMap[this.config.osmosisPool.token1];
+    const token0 = this.osmosisTokensMap[this.config.osmosisPool.token0];
+    const token1 = this.osmosisTokensMap[this.config.osmosisPool.token1];
 
     if (!token0 || !token1) {
       throw new Error("Pool tokens not found in registry");
@@ -407,11 +410,16 @@ export class LiquidityManager {
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POSITION,
       inputAmount: result.amount0,
-      inputToken: token0.denom,
+      inputTokenDenom: token0.denom,
+      inputTokenName: token0.name,
       secondInputAmount: result.amount1,
-      secondInputToken: token1.denom,
+      secondInputTokenDenom: token1.denom,
+      secondInputTokenName: token1.name,
       gasFeeAmount: result.gasFees?.amount,
-      gasFeeToken: result.gasFees?.denom,
+      gasFeeTokenDenom: result.gasFees?.denom,
+      gasFeeTokenName: result.gasFees?.denom
+        ? this.osmosisTokensMap[result.gasFees.denom]?.name
+        : undefined,
       txHash: result.txHash,
       successful: true,
     });
@@ -486,10 +494,9 @@ export class LiquidityManager {
     const positionInfo = await pool.getPositionInfo(
       this.config.osmosisPosition.id
     );
-    const tokenMap = findOsmosisTokensMap(this.environment);
 
-    const token0 = tokenMap[this.config.osmosisPool.token0];
-    const token1 = tokenMap[this.config.osmosisPool.token1];
+    const token0 = this.osmosisTokensMap[this.config.osmosisPool.token0];
+    const token1 = this.osmosisTokensMap[this.config.osmosisPool.token1];
 
     if (!token0 || !token1) {
       throw new Error("Pool tokens not found in registry");
@@ -506,11 +513,16 @@ export class LiquidityManager {
         chainId: this.osmosisChainInfo.id,
         transactionType: TransactionType.WITHDRAW_POSITION,
         outputAmount: result.amount0,
-        outputToken: token0.denom,
+        outputTokenDenom: token0.denom,
+        outputTokenName: token0.name,
         secondOutputAmount: result.amount1,
-        secondOutputToken: token1.denom,
+        secondOutputTokenDenom: token1.denom,
+        secondOutputTokenName: token1.name,
         gasFeeAmount: result.gasFees?.amount,
-        gasFeeToken: result.gasFees?.denom,
+        gasFeeTokenDenom: result.gasFees?.denom,
+        gasFeeTokenName: result.gasFees?.denom
+          ? this.osmosisTokensMap[result.gasFees.denom]?.name
+          : undefined,
         txHash: result.txHash,
         successful: true,
       },
@@ -521,9 +533,15 @@ export class LiquidityManager {
               chainId: this.osmosisChainInfo.id,
               transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
               outputAmount: result.rewardsCollected[0]?.amount,
-              outputToken: result.rewardsCollected[0]?.denom,
+              outputTokenDenom: result.rewardsCollected[0]?.denom,
+              outputTokenName: result.rewardsCollected[0]?.denom
+                ? this.osmosisTokensMap[result.rewardsCollected[0].denom]?.name
+                : undefined,
               secondOutputAmount: result.rewardsCollected[1]?.amount,
-              secondOutputToken: result.rewardsCollected[1]?.denom,
+              secondOutputTokenDenom: result.rewardsCollected[1]?.denom,
+              secondOutputTokenName: result.rewardsCollected[1]?.denom
+                ? this.osmosisTokensMap[result.rewardsCollected[1].denom]?.name
+                : undefined,
               txHash: result.txHash,
               txActionIndex: 1,
               successful: true,
