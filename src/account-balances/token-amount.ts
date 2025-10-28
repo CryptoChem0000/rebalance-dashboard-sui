@@ -6,8 +6,7 @@ export class TokenAmount {
   public amount: string;
 
   constructor(amount: BigNumber.Value, public token: RegistryToken) {
-    this.amount =
-      typeof amount === "string" ? amount : BigNumber(amount).toFixed();
+    this.amount = BigNumber(amount).toFixed(0, BigNumber.ROUND_FLOOR);
   }
 
   get humanReadableAmount(): string {
@@ -21,9 +20,7 @@ export class TokenAmount {
     tokenDenom: RegistryToken
   ): TokenAmount {
     return new TokenAmount(
-      BigNumber(amount || 0)
-        .shiftedBy(tokenDenom.decimals)
-        .toFixed(),
+      BigNumber(amount || 0).shiftedBy(tokenDenom.decimals),
       tokenDenom
     );
   }

@@ -25,7 +25,11 @@
     "cli": "tsx src/cli.ts",
     "start": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
-    "withdraw": "tsx src/cli.ts withdraw"
+    "withdraw": "tsx src/cli.ts withdraw",
+    "report": "tsx src/cli.ts report",
+    "volume": "tsx src/cli.ts volume",
+    "profit": "tsx src/cli.ts profit",
+    "stats": "tsx src/cli.ts stats"
   },
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",

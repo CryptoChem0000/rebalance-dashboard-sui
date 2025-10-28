@@ -4,6 +4,7 @@ import {
   MsgWithdrawPositionResponse,
 } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
 
+import { TokenAmount } from "../../account-balances";
 import type { OsmosisCLPool } from "../osmosis-cl-pool";
 
 // TODO: load from chain and validate on pool creation
@@ -31,7 +32,7 @@ export type CreatePoolParams = {
 export type CreatePoolResponse = {
   pool: OsmosisCLPool;
   txHash: string;
-  gasFees?: Coin;
+  gasFees?: TokenAmount;
 };
 
 export type CreatePositionParams = {
@@ -44,13 +45,13 @@ export type CreatePositionParams = {
 
 export type CreatePositionResponse = {
   positionId: string;
-  amount0: string;
-  amount1: string;
+  tokenAmount0: TokenAmount;
+  tokenAmount1: TokenAmount;
   liquidityCreated: string;
   lowerTick: string;
   upperTick: string;
   txHash: string;
-  gasFees?: Coin;
+  gasFees?: TokenAmount;
 };
 
 export type WithdrawPositionParams = {
@@ -58,19 +59,12 @@ export type WithdrawPositionParams = {
   liquidityAmount: string;
 };
 
-export type WithdrawPositionResponse = MsgWithdrawPositionResponse & {
-  rewardsCollected?: Coin[]
+export type WithdrawPositionResponse = {
+  tokenAmount0: TokenAmount;
+  tokenAmount1: TokenAmount;
+  rewardsCollected?: TokenAmount[];
   txHash: string;
-  gasFees?: Coin;
-};
-
-export type CollectSpreadRewardsParams = {
-  positions: string[];
-};
-
-export type CollectSpreadRewardsResponse = MsgCollectSpreadRewardsResponse & {
-  txHash: string;
-  gasFees?: Coin;
+  gasFees?: TokenAmount;
 };
 
 export type PoolInfoResponse = {

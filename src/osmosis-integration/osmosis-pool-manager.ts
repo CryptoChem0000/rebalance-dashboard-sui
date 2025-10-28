@@ -1,5 +1,4 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
-import { MsgCollectSpreadRewardsResponse } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
 import { osmosis, getSigningOsmosisClient } from "osmojs";
 
 import { OsmosisCLPool } from "./osmosis-cl-pool";
@@ -9,12 +8,8 @@ import {
   DEFAULT_OSMOSIS_TESTNET_REST_ENDPOINT,
   DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT,
 } from "../registry";
-import { extractGasFees, getSignerAddress } from "../utils";
-import { simulateFees } from "./utils";
 
 import {
-  CollectSpreadRewardsParams,
-  CollectSpreadRewardsResponse,
   CreatePoolParams,
   CreatePoolResponse,
   Environment,
@@ -127,57 +122,5 @@ export class OsmosisPoolManager {
       signingClientResult.signingClient,
       this.environment
     );
-  }
-
-  async collectSpreadRewards(
-    params: CollectSpreadRewardsParams,
-    signer?: OfflineSigner,
-    signingClient?: OsmosisSigningClient,
-    memo: string = "",
-  ): Promise<CollectSpreadRewardsResponse> {
-    const signingClientResult = await this.getSignerWithSigningClient(
-      signer,
-      signingClient
-    );
-    const sender = await getSignerAddress(signingClientResult.signer);
-
-    const msg =
-      osmosis.concentratedliquidity.v1beta1.MessageComposer.withTypeUrl.collectSpreadRewards(
-        {
-          positionIds: params.positions.map((item) => BigInt(item)),
-          sender,
-        }
-      );
-
-    const fees = await simulateFees(
-      signingClientResult.signingClient,
-      sender,
-      [msg],
-      memo,
-      "high"
-    );
-
-    const response = await signingClientResult.signingClient.signAndBroadcast(
-      sender,
-      [msg],
-      fees,
-      memo
-    );
-
-    if (!response.msgResponses?.[0]?.value) {
-      throw new Error(
-        "No valid response from the Collect Spread Rewards transaction"
-      );
-    }
-
-    const parsedResponse = MsgCollectSpreadRewardsResponse.decode(
-      response.msgResponses[0].value
-    );
-
-    return {
-      ...parsedResponse,
-      txHash: response.transactionHash,
-      gasFees: extractGasFees(response),
-    };
   }
 }

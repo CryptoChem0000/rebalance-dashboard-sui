@@ -31,6 +31,7 @@ import {
   assertEnoughBalanceForFees,
   getSignerAddress,
   humanReadablePrice,
+  parseCoinToTokenAmount,
 } from "../utils";
 
 import { RebalancerOutput, TokenRebalancerConfig } from "./types";
@@ -238,17 +239,17 @@ export class TokenRebalancer {
       expectedOutput = amountToBridge.div(boltPrice);
     }
 
-    const inputAmountString = amountToBridge.toFixed(0);
+    const inputTokenAmount = new TokenAmount(amountToBridge, excessToken);
+    const expectedOutputTokenAmount = new TokenAmount(
+      expectedOutput,
+      targetToken
+    );
 
     console.log(
-      `Calculated optimal bridge amount: ${
-        new TokenAmount(amountToBridge, excessToken).humanReadableAmount
-      } ${excessToken.name}`
+      `Calculated optimal bridge amount: ${inputTokenAmount.humanReadableAmount} ${inputTokenAmount.token.name}`
     );
     console.log(
-      `Expected ${targetToken.name} output: ${
-        new TokenAmount(expectedOutput, targetToken).humanReadableAmount
-      } ${targetToken.name}`
+      `Expected ${targetToken.name} output: ${expectedOutputTokenAmount.humanReadableAmount} ${targetToken.name}`
     );
 
     // Verify minimum swap amount on bolt
@@ -284,42 +285,39 @@ export class TokenRebalancer {
 
     // Bridge excess token to Archway
     console.log(
-      `Bridging ${
-        new TokenAmount(amountToBridge, excessToken).humanReadableAmount
-      } ${excessToken.name} to Archway...`
+      `Bridging ${inputTokenAmount.humanReadableAmount} ${inputTokenAmount.token.name} to Archway...`
     );
     const bridgeResult = await this.skipBridging.bridgeToken(
       this.osmosisSigner,
       this.keyStore,
       {
-        fromToken: excessToken,
+        fromToken: inputTokenAmount.token,
         toChainId: this.archwayChainInfo.id,
-        amount: inputAmountString,
+        amount: inputTokenAmount.amount,
       }
     );
 
     const bridgeGasFees = await this.findGasFeesOfTx(
       bridgeResult.txHash,
-      this.osmosisChainInfo
+      this.osmosisChainInfo,
+      this.osmosisTokensMap
     );
 
     this.database.addTransaction({
       signerAddress: osmosisAddress,
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.IBC_TRANSFER,
-      inputAmount: inputAmountString,
-      inputTokenDenom: excessToken.denom,
-      inputTokenName: excessToken.name,
-      outputAmount: inputAmountString,
+      inputAmount: inputTokenAmount.humanReadableAmount,
+      inputTokenDenom: inputTokenAmount.token.denom,
+      inputTokenName: inputTokenAmount.token.name,
+      outputAmount: inputTokenAmount.humanReadableAmount,
       outputTokenDenom: bridgeResult.destinationToken.denom,
       outputTokenName: bridgeResult.destinationToken.name,
       destinationAddress: bridgeResult.destinationAddress,
       destinationChainId: bridgeResult.destinationToken.chainId,
-      gasFeeAmount: bridgeGasFees?.amount,
-      gasFeeTokenDenom: bridgeGasFees?.denom,
-      gasFeeTokenName: bridgeGasFees?.denom
-        ? this.osmosisTokensMap[bridgeGasFees.denom]?.name
-        : undefined,
+      gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+      gasFeeTokenDenom: bridgeGasFees?.token.denom,
+      gasFeeTokenName: bridgeGasFees?.token.name,
       txHash: bridgeResult.txHash,
       successful: true,
     });
@@ -328,55 +326,51 @@ export class TokenRebalancer {
 
     // Swap on Bolt
     console.log(
-      `Swapping ${
-        new TokenAmount(amountToBridge, excessToken).humanReadableAmount
-      } ${excessTokenArchway.name} for ~${
-        new TokenAmount(expectedOutput, targetToken).humanReadableAmount
-      } ${targetTokenArchway.name} on Bolt...`
+      `Swapping ${inputTokenAmount.humanReadableAmount} ${excessTokenArchway.name} for ~${expectedOutputTokenAmount.humanReadableAmount} ${targetTokenArchway.name} on Bolt...`
     );
 
     const swapResult = await boltClient.swap(
       {
         assetIn: excessTokenArchway.denom,
         assetOut: targetTokenArchway.denom,
-        amountIn: inputAmountString,
+        amountIn: inputTokenAmount.amount,
       },
       this.archwaySigner
     );
 
+    const boltSwapOutput = new TokenAmount(
+      swapResult.amountOut,
+      targetTokenArchway
+    );
+
     const boltSwapGasFees = await this.findGasFeesOfTx(
       swapResult.txHash,
-      this.archwayChainInfo
+      this.archwayChainInfo,
+      this.archwayTokensMap
     );
 
     this.database.addTransaction({
       signerAddress: archwayAddress,
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.BOLT_ARCHWAY_SWAP,
-      inputAmount: inputAmountString,
+      inputAmount: inputTokenAmount.humanReadableAmount,
       inputTokenDenom: excessTokenArchway.denom,
       inputTokenName: excessTokenArchway.name,
-      outputAmount: swapResult.amountOut,
-      outputTokenDenom: targetTokenArchway.denom,
-      outputTokenName: targetTokenArchway.name,
-      gasFeeAmount: boltSwapGasFees?.amount,
-      gasFeeTokenDenom: boltSwapGasFees?.denom,
-      gasFeeTokenName: boltSwapGasFees?.denom
-        ? this.archwayTokensMap[boltSwapGasFees.denom]?.name
-        : undefined,
+      outputAmount: boltSwapOutput.humanReadableAmount,
+      outputTokenDenom: boltSwapOutput.token.denom,
+      outputTokenName: boltSwapOutput.token.name,
+      gasFeeAmount: boltSwapGasFees?.humanReadableAmount,
+      gasFeeTokenDenom: boltSwapGasFees?.token.denom,
+      gasFeeTokenName: boltSwapGasFees?.token.name,
       txHash: swapResult.txHash,
       successful: true,
     });
 
     console.log(`Swap complete. Tx: ${swapResult.txHash}`);
 
-    const boltSwapOutput = BigNumber(swapResult.amountOut);
-
     // Bridge target token back to Osmosis
     console.log(
-      `Bridging ${
-        new TokenAmount(boltSwapOutput, targetToken).humanReadableAmount
-      } ${targetTokenArchway.name} back to Osmosis...`
+      `Bridging ${boltSwapOutput.humanReadableAmount} ${targetTokenArchway.name} back to Osmosis...`
     );
 
     const bridgeBackResult = await this.skipBridging.bridgeToken(
@@ -385,32 +379,31 @@ export class TokenRebalancer {
       {
         fromToken: targetTokenArchway,
         toChainId: this.osmosisChainInfo.id,
-        amount: boltSwapOutput.toFixed(0),
+        amount: boltSwapOutput.amount,
       }
     );
 
     const bridgeBackGasFees = await this.findGasFeesOfTx(
       bridgeBackResult.txHash,
-      this.archwayChainInfo
+      this.archwayChainInfo,
+      this.archwayTokensMap
     );
 
     this.database.addTransaction({
       signerAddress: archwayAddress,
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.IBC_TRANSFER,
-      inputAmount: boltSwapOutput.toFixed(0),
-      inputTokenDenom: targetTokenArchway.denom,
-      inputTokenName: targetTokenArchway.name,
-      outputAmount: boltSwapOutput.toFixed(0),
+      inputAmount: boltSwapOutput.humanReadableAmount,
+      inputTokenDenom: boltSwapOutput.token.denom,
+      inputTokenName: boltSwapOutput.token.name,
+      outputAmount: boltSwapOutput.humanReadableAmount,
       outputTokenDenom: bridgeBackResult.destinationToken.denom,
       outputTokenName: bridgeBackResult.destinationToken.name,
       destinationAddress: bridgeBackResult.destinationAddress,
       destinationChainId: bridgeBackResult.destinationToken.chainId,
-      gasFeeAmount: bridgeBackGasFees?.amount,
-      gasFeeTokenDenom: bridgeBackGasFees?.denom,
-      gasFeeTokenName: bridgeBackGasFees?.denom
-        ? this.archwayTokensMap[bridgeBackGasFees.denom]?.name
-        : undefined,
+      gasFeeAmount: bridgeBackGasFees?.humanReadableAmount,
+      gasFeeTokenDenom: bridgeBackGasFees?.token.denom,
+      gasFeeTokenName: bridgeBackGasFees?.token.name,
       txHash: bridgeBackResult.txHash,
       successful: true,
     });
@@ -449,14 +442,19 @@ export class TokenRebalancer {
 
   private async findGasFeesOfTx(
     txHash: string,
-    chainInfo: ChainInfo
-  ): Promise<Coin | undefined> {
+    chainInfo: ChainInfo,
+    tokensMap: Record<string, RegistryToken>
+  ): Promise<TokenAmount | undefined> {
     try {
       const response = await axios.get(
         `${chainInfo.restEndpoint}/cosmos/tx/v1beta1/txs/${txHash}`
       );
 
-      return response.data?.tx?.auth_info?.fee?.amount?.[0] as Coin | undefined;
+      const coin = response.data?.tx?.auth_info?.fee?.amount?.[0] as
+        | Coin
+        | undefined;
+
+      return coin ? parseCoinToTokenAmount(coin, tokensMap) : undefined;
     } catch {
       return undefined;
     }

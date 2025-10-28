@@ -1,11 +1,13 @@
-import { Coin } from "@cosmjs/proto-signing";
 import { DeliverTxResponse } from "@cosmjs/stargate";
 
-import { parseStringToCoin } from "../../utils";
+import { TokenAmount } from "../../account-balances";
+import { RegistryToken } from "../../registry";
+import { parseCoinToTokenAmount, parseStringToCoin } from "../../utils";
 
 export const extractRewardsCollected = (
-  txResponse: DeliverTxResponse
-): Coin[] | undefined => {
+  txResponse: DeliverTxResponse,
+  tokensMap: Record<string, RegistryToken>
+): TokenAmount[] | undefined => {
   const COLLECT_SPREAD_REWARDS_EVENT_TYPE = "collect_spread_rewards";
   const TOKENS_OUT_EVENT_ATTRIBUTE_KEY = "tokens_out";
 
@@ -16,6 +18,10 @@ export const extractRewardsCollected = (
     )?.value;
 
   return eventEntry
-    ? eventEntry.split(",").map((item) => parseStringToCoin(item))
+    ? eventEntry
+        .split(",")
+        .map((item) =>
+          parseCoinToTokenAmount(parseStringToCoin(item), tokensMap)
+        )
     : undefined;
 };

@@ -16,8 +16,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   // Prepared statements for better performance
   private insertStmt!: Database.Statement<AccountTransaction>;
   private getByTxHashStmt!: Database.Statement<[string, string]>;
-  private getByAccountStmt!: Database.Statement<[string, number, number]>;
-  private getByTypeStmt!: Database.Statement<[string, string, number]>;
 
   constructor(filename: string, options?: Database.Options) {
     this.db = new Database(filename, options);
@@ -32,7 +30,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     const workingDir = await getWorkingDirectory();
     const databaseDir = path.join(workingDir, "database");
 
-    // Create logs directory if it doesn't exist
+    // Create database directory if it doesn't exist
     try {
       await fs.access(databaseDir);
     } catch {
@@ -41,7 +39,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
 
     const finalPath = path.join(
       databaseDir,
-      `${filename}.db` || "account_transactions.db"
+      filename ? `${filename}.db` : "account_transactions.db"
     );
 
     return new SQLiteTransactionRepository(finalPath, options);
@@ -88,14 +86,8 @@ export class SQLiteTransactionRepository implements TransactionRepository {
 
     // Create indexes for common queries
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_signer_address_timestamp 
-      ON account_transactions(signer_address, timestamp DESC);
-      
-      CREATE INDEX IF NOT EXISTS idx_transaction_type 
-      ON account_transactions(signer_address, transaction_type, timestamp DESC);
-      
-      CREATE INDEX IF NOT EXISTS idx_destination_address 
-      ON account_transactions(destination_address, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_transaction_type_timestamp 
+      ON account_transactions(transaction_type, timestamp DESC);
       
       CREATE INDEX IF NOT EXISTS idx_timestamp 
       ON account_transactions(timestamp DESC);
@@ -105,6 +97,9 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       
       CREATE INDEX IF NOT EXISTS idx_chain_tx_hash 
       ON account_transactions(chain_id, tx_hash);
+      
+      CREATE INDEX IF NOT EXISTS idx_token_names 
+      ON account_transactions(input_token_name, output_token_name);
     `);
   }
 
@@ -161,20 +156,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       SELECT * FROM account_transactions 
       WHERE tx_hash = ? AND chain_id = ?
       ORDER BY tx_action_index
-    `);
-
-    this.getByAccountStmt = this.db.prepare(`
-      SELECT * FROM account_transactions 
-      WHERE signer_address = ? 
-      ORDER BY timestamp DESC, tx_action_index
-      LIMIT ? OFFSET ?
-    `);
-
-    this.getByTypeStmt = this.db.prepare(`
-      SELECT * FROM account_transactions 
-      WHERE signer_address = ? AND transaction_type = ?
-      ORDER BY timestamp DESC, tx_action_index
-      LIMIT ?
     `);
   }
 
@@ -242,6 +223,23 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     };
   }
 
+  // Helper method to build time filter for SQL queries
+  private buildTimeFilter(startTime?: Date, endTime?: Date): string {
+    let filter = "";
+
+    if (startTime !== undefined) {
+      // Convert milliseconds to seconds
+      filter += ` AND timestamp >= ${Math.floor(startTime.getTime() / 1000)}`;
+    }
+
+    if (endTime !== undefined) {
+      // Convert milliseconds to seconds
+      filter += ` AND timestamp <= ${Math.floor(endTime.getTime() / 1000)}`;
+    }
+
+    return filter;
+  }
+
   addTransaction(tx: AccountTransaction): void {
     this.insertStmt.run(this.transactionToParams(tx));
   }
@@ -267,148 +265,380 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getAccountTransactions(
-    signerAddress: string,
     limit: number = 100,
-    offset: number = 0
+    offset: number = 0,
+    startTime?: Date,
+    endTime?: Date
   ): AccountTransaction[] {
-    const rows = this.getByAccountStmt.all(signerAddress, limit, offset);
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
+    const query = this.db.prepare(`
+      SELECT * FROM account_transactions 
+      WHERE 1=1 ${timeFilter}
+      ORDER BY timestamp DESC, tx_action_index
+      LIMIT ? OFFSET ?
+    `);
+    
+    const rows = query.all(limit, offset);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
   getTransactionsByType(
-    signerAddress: string,
     transactionType: TransactionType,
-    limit: number = 100
+    limit: number = 100,
+    startTime?: Date,
+    endTime?: Date
   ): AccountTransaction[] {
-    const rows = this.getByTypeStmt.all(signerAddress, transactionType, limit);
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
+    const query = this.db.prepare(`
+      SELECT * FROM account_transactions 
+      WHERE transaction_type = ? ${timeFilter}
+      ORDER BY timestamp DESC, tx_action_index
+      LIMIT ?
+    `);
+    
+    const rows = query.all(transactionType, limit);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
   // Get transactions by multiple types
   getTransactionsByTypes(
-    signerAddress: string,
     transactionTypes: TransactionType[],
-    limit: number = 100
+    limit: number = 100,
+    startTime?: Date,
+    endTime?: Date
   ): AccountTransaction[] {
     const placeholders = transactionTypes.map(() => "?").join(",");
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
       SELECT * FROM account_transactions 
-      WHERE signer_address = ? 
-      AND transaction_type IN (${placeholders})
+      WHERE transaction_type IN (${placeholders}) ${timeFilter}
       ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
 
-    const rows = query.all(signerAddress, ...transactionTypes, limit);
+    const rows = query.all(...transactionTypes, limit);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
-  // Complex analytical query example
-  getAccountStats(signerAddress: string): any {
+  // Account stats without unique destinations or chains used
+  getAccountStats(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
       WITH account_summary AS (
         SELECT
           transaction_type,
           COUNT(*) as count,
           SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) as successful_count,
-          COUNT(DISTINCT destination_address) as unique_destinations,
-          COUNT(DISTINCT chain_id) as chains_used,
           MIN(timestamp) as first_transaction,
           MAX(timestamp) as last_transaction
         FROM account_transactions
-        WHERE signer_address = ?
+        WHERE 1=1 ${timeFilter}
         GROUP BY transaction_type
       )
       SELECT 
-        transaction_type,
+        transaction_type as transactionType,
         count,
-        successful_count,
-        CAST(successful_count AS REAL) / count as success_rate,
-        unique_destinations,
-        chains_used,
-        first_transaction,
-        last_transaction
+        successful_count as successfulCount,
+        CAST(successful_count AS REAL) / count as successRate,
+        first_transaction as firstTransaction,
+        last_transaction as lastTransaction
       FROM account_summary
       ORDER BY count DESC
     `);
 
-    return query.all(signerAddress);
+    return query.all();
   }
 
-  // Additional useful queries
-  getTransactionVolume(
-    signerAddress: string,
-    startTime?: number,
-    endTime?: number
-  ): any {
+  // Archway Bolt volume - sum of all amounts in and out for BOLT_ARCHWAY_SWAP
+  getArchwayBoltVolume(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
+      WITH bolt_volumes AS (
+        SELECT 
+          token_name,
+          SUM(amount) as total_volume
+        FROM (
+          -- Input amounts
+          SELECT input_token_name as token_name, CAST(input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'bolt_archway_swap' 
+            AND successful = 1
+            AND input_amount IS NOT NULL 
+            AND input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second input amounts
+          SELECT second_input_token_name as token_name, CAST(second_input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'bolt_archway_swap' 
+            AND successful = 1
+            AND second_input_amount IS NOT NULL 
+            AND second_input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Output amounts
+          SELECT output_token_name as token_name, CAST(output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'bolt_archway_swap' 
+            AND successful = 1
+            AND output_amount IS NOT NULL 
+            AND output_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second output amounts
+          SELECT second_output_token_name as token_name, CAST(second_output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'bolt_archway_swap' 
+            AND successful = 1
+            AND second_output_amount IS NOT NULL 
+            AND second_output_token_name IS NOT NULL
+            ${timeFilter}
+        ) AS all_amounts
+        GROUP BY token_name
+      )
       SELECT 
-        DATE(timestamp, 'unixepoch') as date,
-        COUNT(*) as transaction_count,
-        SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) as successful_count,
-        COUNT(DISTINCT transaction_type) as unique_types,
-        COUNT(DISTINCT chain_id) as chains_used
-      FROM account_transactions
-      WHERE signer_address = ?
-        AND timestamp >= COALESCE(?, 0)
-        AND timestamp <= COALESCE(?, strftime('%s', 'now'))
-      GROUP BY DATE(timestamp, 'unixepoch')
-      ORDER BY date DESC
+        token_name as tokenName,
+        total_volume as totalVolume,
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'bolt_archway_swap' AND successful = 1 ${timeFilter}) as totalSwaps
+      FROM bolt_volumes
+      ORDER BY total_volume DESC
     `);
 
-    return query.all(signerAddress, startTime, endTime);
+    return query.all();
   }
 
-  getFailedTransactions(
-    signerAddress: string,
-    limit: number = 50
-  ): AccountTransaction[] {
+  // Osmosis volume - sum of all amounts in and out for CREATE_POSITION and WITHDRAW_POSITION
+  getOsmosisVolume(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
-      SELECT * FROM account_transactions
-      WHERE signer_address = ? AND successful = 0
-      ORDER BY timestamp DESC, tx_action_index
-      LIMIT ?
+      WITH osmosis_volumes AS (
+        SELECT 
+          token_name,
+          SUM(amount) as total_volume
+        FROM (
+          -- Input amounts
+          SELECT input_token_name as token_name, CAST(input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type IN ('create_position', 'withdraw_position')
+            AND successful = 1
+            AND input_amount IS NOT NULL 
+            AND input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second input amounts
+          SELECT second_input_token_name as token_name, CAST(second_input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type IN ('create_position', 'withdraw_position')
+            AND successful = 1
+            AND second_input_amount IS NOT NULL 
+            AND second_input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Output amounts
+          SELECT output_token_name as token_name, CAST(output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type IN ('create_position', 'withdraw_position')
+            AND successful = 1
+            AND output_amount IS NOT NULL 
+            AND output_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second output amounts
+          SELECT second_output_token_name as token_name, CAST(second_output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type IN ('create_position', 'withdraw_position')
+            AND successful = 1
+            AND second_output_amount IS NOT NULL 
+            AND second_output_token_name IS NOT NULL
+            ${timeFilter}
+        ) AS all_amounts
+        GROUP BY token_name
+      )
+      SELECT 
+        token_name as tokenName,
+        total_volume as totalVolume,
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type IN ('create_position', 'withdraw_position') AND successful = 1 ${timeFilter}) as totalOperations
+      FROM osmosis_volumes
+      ORDER BY total_volume DESC
     `);
 
-    const rows = query.all(signerAddress, limit);
-    return rows.map((row) => this.rowToTransaction(row)!);
+    return query.all();
   }
 
-  // Cross-chain activity
-  getCrossChainActivity(signerAddress: string): any {
+  // Bridge volume - sum of all amounts in and out for IBC_TRANSFER
+  getBridgeVolume(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
+      WITH bridge_volumes AS (
+        SELECT 
+          token_name,
+          SUM(amount) as total_volume
+        FROM (
+          -- Input amounts (sending)
+          SELECT input_token_name as token_name, CAST(input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'ibc_transfer'
+            AND successful = 1
+            AND input_amount IS NOT NULL 
+            AND input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Output amounts (receiving)
+          SELECT output_token_name as token_name, CAST(output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE transaction_type = 'ibc_transfer'
+            AND successful = 1
+            AND output_amount IS NOT NULL 
+            AND output_token_name IS NOT NULL
+            ${timeFilter}
+        ) AS all_amounts
+        GROUP BY token_name
+      )
       SELECT 
-        chain_id as source_chain,
-        destination_chain_id as dest_chain,
-        COUNT(*) as transfer_count,
-        COUNT(DISTINCT DATE(timestamp, 'unixepoch')) as active_days
-      FROM account_transactions
-      WHERE signer_address = ?
-        AND destination_chain_id IS NOT NULL
-        AND chain_id != destination_chain_id
-      GROUP BY chain_id, destination_chain_id
-      ORDER BY transfer_count DESC
+        token_name as tokenName,
+        total_volume as totalVolume,
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'ibc_transfer' AND successful = 1 ${timeFilter}) as totalTransfers
+      FROM bridge_volumes
+      ORDER BY total_volume DESC
     `);
 
-    return query.all(signerAddress);
+    return query.all();
   }
 
-  // Get summary by transaction type
-  getTransactionTypeSummary(signerAddress: string): any {
+  // Profitability - consider all input amounts and gas as payments, output amounts as receipts
+  getProfitability(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
+    const query = this.db.prepare(`
+      WITH token_flows AS (
+        -- All payments (negative values)
+        SELECT 
+          token_name,
+          -SUM(amount) as net_amount,
+          'payment' as flow_type
+        FROM (
+          -- Input amounts
+          SELECT input_token_name as token_name, CAST(input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE successful = 1
+            AND input_amount IS NOT NULL 
+            AND input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second input amounts
+          SELECT second_input_token_name as token_name, CAST(second_input_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE successful = 1
+            AND second_input_amount IS NOT NULL 
+            AND second_input_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Gas fees
+          SELECT gas_fee_token_name as token_name, CAST(gas_fee_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE successful = 1
+            AND gas_fee_amount IS NOT NULL 
+            AND gas_fee_token_name IS NOT NULL
+            ${timeFilter}
+        ) AS payments
+        GROUP BY token_name
+        
+        UNION ALL
+        
+        -- All receipts (positive values)
+        SELECT 
+          token_name,
+          SUM(amount) as net_amount,
+          'receipt' as flow_type
+        FROM (
+          -- Output amounts
+          SELECT output_token_name as token_name, CAST(output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE successful = 1
+            AND output_amount IS NOT NULL 
+            AND output_token_name IS NOT NULL
+            ${timeFilter}
+          
+          UNION ALL
+          
+          -- Second output amounts
+          SELECT second_output_token_name as token_name, CAST(second_output_amount AS REAL) as amount
+          FROM account_transactions
+          WHERE successful = 1
+            AND second_output_amount IS NOT NULL 
+            AND second_output_token_name IS NOT NULL
+            ${timeFilter}
+        ) AS receipts
+        GROUP BY token_name
+      ),
+      token_summary AS (
+        SELECT 
+          token_name,
+          SUM(net_amount) as net_balance,
+          SUM(CASE WHEN flow_type = 'payment' THEN -net_amount ELSE 0 END) as total_sent,
+          SUM(CASE WHEN flow_type = 'receipt' THEN net_amount ELSE 0 END) as total_received
+        FROM token_flows
+        GROUP BY token_name
+      )
+      SELECT 
+        token_name as tokenName,
+        total_sent as totalSent,
+        total_received as totalReceived,
+        net_balance as netBalance,
+        CASE 
+          WHEN total_sent > 0 THEN (net_balance / total_sent) * 100
+          ELSE NULL
+        END as roiPercentage
+      FROM token_summary
+      ORDER BY net_balance DESC
+    `);
+
+    return query.all();
+  }
+
+  // Get summary by transaction type (without signerAddress filter)
+  getTransactionTypeSummary(startTime?: Date, endTime?: Date): any {
+    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    
     const query = this.db.prepare(`
       SELECT 
-        transaction_type,
-        COUNT(*) as total_count,
-        SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) as success_count,
-        SUM(CASE WHEN successful = 0 THEN 1 ELSE 0 END) as failed_count,
-        CAST(SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as success_rate
+        transaction_type as transactionType,
+        COUNT(*) as totalCount,
+        SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) as successCount,
+        SUM(CASE WHEN successful = 0 THEN 1 ELSE 0 END) as failedCount,
+        CAST(SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as successRate
       FROM account_transactions
-      WHERE signer_address = ?
+      WHERE 1=1 ${timeFilter}
       GROUP BY transaction_type
-      ORDER BY total_count DESC
+      ORDER BY totalCount DESC
     `);
 
-    return query.all(signerAddress);
+    return query.all();
   }
 
   close(): void {

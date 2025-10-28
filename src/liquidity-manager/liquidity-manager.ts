@@ -217,10 +217,53 @@ export class LiquidityManager {
         const positionInfo = await pool.getPositionInfo(
           this.config.osmosisPosition.id
         );
-        await pool.withdrawPosition({
+        const withdrawResult = await pool.withdrawPosition({
           positionId: this.config.osmosisPosition.id,
           liquidityAmount: positionInfo.position.liquidity,
         });
+
+        this.database.addTransactionBatch([
+          {
+            signerAddress: this.osmosisAddress,
+            chainId: this.osmosisChainInfo.id,
+            transactionType: TransactionType.WITHDRAW_POSITION,
+            outputAmount: withdrawResult.tokenAmount0.humanReadableAmount,
+            outputTokenDenom: withdrawResult.tokenAmount0.token.denom,
+            outputTokenName: withdrawResult.tokenAmount0.token.name,
+            secondOutputAmount: withdrawResult.tokenAmount1.humanReadableAmount,
+            secondOutputTokenDenom: withdrawResult.tokenAmount1.token.denom,
+            secondOutputTokenName: withdrawResult.tokenAmount1.token.name,
+            gasFeeAmount: withdrawResult.gasFees?.humanReadableAmount,
+            gasFeeTokenDenom: withdrawResult.gasFees?.token.denom,
+            gasFeeTokenName: withdrawResult.gasFees?.token.name,
+            txHash: withdrawResult.txHash,
+            successful: true,
+          },
+          ...(withdrawResult.rewardsCollected?.length
+            ? [
+                {
+                  signerAddress: this.osmosisAddress,
+                  chainId: this.osmosisChainInfo.id,
+                  transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
+                  outputAmount:
+                    withdrawResult.rewardsCollected[0]?.humanReadableAmount,
+                  outputTokenDenom:
+                    withdrawResult.rewardsCollected[0]?.token.denom,
+                  outputTokenName:
+                    withdrawResult.rewardsCollected[0]?.token.name,
+                  secondOutputAmount:
+                    withdrawResult.rewardsCollected[1]?.humanReadableAmount,
+                  secondOutputTokenDenom:
+                    withdrawResult.rewardsCollected[1]?.token.denom,
+                  secondOutputTokenName:
+                    withdrawResult.rewardsCollected[1]?.token.name,
+                  txHash: withdrawResult.txHash,
+                  txActionIndex: 1,
+                  successful: true,
+                },
+              ]
+            : []),
+        ]);
 
         // Clear position ID from config
         this.config.osmosisPosition.id = "";
@@ -266,11 +309,9 @@ export class LiquidityManager {
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POOL,
-      gasFeeAmount: result.gasFees?.amount,
-      gasFeeTokenDenom: result.gasFees?.denom,
-      gasFeeTokenName: result.gasFees?.denom
-        ? this.osmosisTokensMap[result.gasFees.denom]?.name
-        : undefined,
+      gasFeeAmount: result.gasFees?.humanReadableAmount,
+      gasFeeTokenDenom: result.gasFees?.token.denom,
+      gasFeeTokenName: result.gasFees?.token.name,
       txHash: result.txHash,
       successful: true,
     });
@@ -398,28 +439,22 @@ export class LiquidityManager {
     });
 
     console.log(
-      `Actual deposited amounts: ${
-        new TokenAmount(result.amount0, token0).humanReadableAmount
-      } ${token0.name}, ${
-        new TokenAmount(result.amount1, token1).humanReadableAmount
-      } ${token1.name}`
+      `Actual deposited amounts: ${result.tokenAmount0.humanReadableAmount} ${token0.name}, ${result.tokenAmount1.humanReadableAmount} ${token1.name}`
     );
 
     this.database.addTransaction({
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POSITION,
-      inputAmount: result.amount0,
-      inputTokenDenom: token0.denom,
-      inputTokenName: token0.name,
-      secondInputAmount: result.amount1,
-      secondInputTokenDenom: token1.denom,
-      secondInputTokenName: token1.name,
-      gasFeeAmount: result.gasFees?.amount,
-      gasFeeTokenDenom: result.gasFees?.denom,
-      gasFeeTokenName: result.gasFees?.denom
-        ? this.osmosisTokensMap[result.gasFees.denom]?.name
-        : undefined,
+      inputAmount: result.tokenAmount0.humanReadableAmount,
+      inputTokenDenom: result.tokenAmount0.token.denom,
+      inputTokenName: result.tokenAmount0.token.name,
+      secondInputAmount: result.tokenAmount1.humanReadableAmount,
+      secondInputTokenDenom: result.tokenAmount1.token.denom,
+      secondInputTokenName: result.tokenAmount1.token.name,
+      gasFeeAmount: result.gasFees?.humanReadableAmount,
+      gasFeeTokenDenom: result.gasFees?.token.denom,
+      gasFeeTokenName: result.gasFees?.token.name,
       txHash: result.txHash,
       successful: true,
     });
@@ -512,17 +547,15 @@ export class LiquidityManager {
         signerAddress: this.osmosisAddress,
         chainId: this.osmosisChainInfo.id,
         transactionType: TransactionType.WITHDRAW_POSITION,
-        outputAmount: result.amount0,
-        outputTokenDenom: token0.denom,
-        outputTokenName: token0.name,
-        secondOutputAmount: result.amount1,
-        secondOutputTokenDenom: token1.denom,
-        secondOutputTokenName: token1.name,
-        gasFeeAmount: result.gasFees?.amount,
-        gasFeeTokenDenom: result.gasFees?.denom,
-        gasFeeTokenName: result.gasFees?.denom
-          ? this.osmosisTokensMap[result.gasFees.denom]?.name
-          : undefined,
+        outputAmount: result.tokenAmount0.humanReadableAmount,
+        outputTokenDenom: result.tokenAmount0.token.denom,
+        outputTokenName: result.tokenAmount0.token.name,
+        secondOutputAmount: result.tokenAmount1.humanReadableAmount,
+        secondOutputTokenDenom: result.tokenAmount1.token.denom,
+        secondOutputTokenName: result.tokenAmount1.token.name,
+        gasFeeAmount: result.gasFees?.humanReadableAmount,
+        gasFeeTokenDenom: result.gasFees?.token.denom,
+        gasFeeTokenName: result.gasFees?.token.name,
         txHash: result.txHash,
         successful: true,
       },
@@ -532,16 +565,13 @@ export class LiquidityManager {
               signerAddress: this.osmosisAddress,
               chainId: this.osmosisChainInfo.id,
               transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
-              outputAmount: result.rewardsCollected[0]?.amount,
-              outputTokenDenom: result.rewardsCollected[0]?.denom,
-              outputTokenName: result.rewardsCollected[0]?.denom
-                ? this.osmosisTokensMap[result.rewardsCollected[0].denom]?.name
-                : undefined,
-              secondOutputAmount: result.rewardsCollected[1]?.amount,
-              secondOutputTokenDenom: result.rewardsCollected[1]?.denom,
-              secondOutputTokenName: result.rewardsCollected[1]?.denom
-                ? this.osmosisTokensMap[result.rewardsCollected[1].denom]?.name
-                : undefined,
+              outputAmount: result.rewardsCollected[0]?.humanReadableAmount,
+              outputTokenDenom: result.rewardsCollected[0]?.token.denom,
+              outputTokenName: result.rewardsCollected[0]?.token.name,
+              secondOutputAmount:
+                result.rewardsCollected[1]?.humanReadableAmount,
+              secondOutputTokenDenom: result.rewardsCollected[1]?.token.denom,
+              secondOutputTokenName: result.rewardsCollected[1]?.token.name,
               txHash: result.txHash,
               txActionIndex: 1,
               successful: true,
@@ -550,31 +580,17 @@ export class LiquidityManager {
         : []),
     ]);
 
-    const amount0Withdrawn = new TokenAmount(result.amount0, token0);
-    const amount1Withdrawn = new TokenAmount(result.amount1, token1);
-
     console.log(
-      `Withdrew ${amount0Withdrawn.humanReadableAmount} ${token0.name} and ${amount1Withdrawn.humanReadableAmount} ${token1.name}`
+      `Withdrew ${result.tokenAmount0.humanReadableAmount} ${token0.name} and ${result.tokenAmount1.humanReadableAmount} ${token1.name}`
     );
 
     if (result.rewardsCollected?.length) {
-      const amount0Rewards = new TokenAmount(
-        result.rewardsCollected[0]!.amount,
-        token0.denom === result.rewardsCollected[0]?.denom ? token0 : token1
-      );
-      const amount1Rewards = result.rewardsCollected[1]?.amount
-        ? new TokenAmount(
-            result.rewardsCollected[1].amount,
-            token0.denom === result.rewardsCollected[1].denom ? token0 : token1
-          )
-        : undefined;
-
       console.log(
-        `Claimed ${amount0Rewards.humanReadableAmount} ${
-          amount0Rewards.token.name
+        `Claimed ${result.rewardsCollected[0]!.humanReadableAmount} ${
+          result.rewardsCollected[0]!.token.name
         } ${
-          amount1Rewards
-            ? `and ${amount1Rewards.humanReadableAmount} ${amount1Rewards.token.name}`
+          result.rewardsCollected[1]
+            ? `and ${result.rewardsCollected[1].humanReadableAmount} ${result.rewardsCollected[1].token.name}`
             : ""
         } in Spread Rewards`
       );
@@ -585,8 +601,8 @@ export class LiquidityManager {
     await this.saveConfig();
 
     return {
-      amount0Withdrawn,
-      amount1Withdrawn,
+      amount0Withdrawn: result.tokenAmount0,
+      amount1Withdrawn: result.tokenAmount1,
     };
   }
 

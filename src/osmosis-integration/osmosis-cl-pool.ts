@@ -10,9 +10,13 @@ import { SpotPriceResponse } from "osmojs/osmosis/poolmanager/v1beta1/query";
 import { osmosis } from "osmojs";
 
 import { getPairPriceOnOsmosis } from "../prices";
-import { findOsmosisTokensMap } from "../registry";
+import { findOsmosisTokensMap, RegistryToken } from "../registry";
 import { OsmosisTickMath } from "./tick-math";
-import { extractGasFees, getSignerAddress } from "../utils";
+import {
+  extractGasFees,
+  getSignerAddress,
+  parseCoinToTokenAmount,
+} from "../utils";
 import { extractRewardsCollected, simulateFees } from "./utils";
 
 import {
@@ -33,6 +37,7 @@ import {
 export class OsmosisCLPool {
   public token0?: string;
   public token1?: string;
+  public tokensMap: Record<string, RegistryToken>;
 
   constructor(
     public poolId: string,
@@ -45,6 +50,7 @@ export class OsmosisCLPool {
   ) {
     this.token0 = token0;
     this.token1 = token1;
+    this.tokensMap = findOsmosisTokensMap(this.environment);
   }
 
   static async createPool(
@@ -86,20 +92,24 @@ export class OsmosisCLPool {
 
     const newPoolId = BigNumber(parsedResponse.poolId).toFixed();
 
+    const environmentValue = params.environment ?? "mainnet";
+
     const pool = new OsmosisCLPool(
       newPoolId,
       queryClient,
       signer,
       signingClient,
-      params.environment ?? "mainnet",
+      environmentValue,
       params.token0,
       params.token1
     );
 
+    const tokensMap = findOsmosisTokensMap(environmentValue);
+
     return {
       pool,
       txHash: response.transactionHash,
-      gasFees: extractGasFees(response),
+      gasFees: extractGasFees(response, tokensMap),
     };
   }
 
@@ -107,6 +117,7 @@ export class OsmosisCLPool {
     params: CreatePositionParams,
     memo: string = ""
   ): Promise<CreatePositionResponse> {
+    const { token0, token1 } = await this.getToken0Token1();
     const sender = await getSignerAddress(this.signer);
 
     const msg =
@@ -143,13 +154,25 @@ export class OsmosisCLPool {
 
     return {
       positionId: BigNumber(parsedResponse.positionId).toFixed(),
-      amount0: parsedResponse.amount0,
-      amount1: parsedResponse.amount1,
+      tokenAmount0: parseCoinToTokenAmount(
+        {
+          amount: parsedResponse.amount0,
+          denom: token0,
+        },
+        this.tokensMap
+      ),
+      tokenAmount1: parseCoinToTokenAmount(
+        {
+          amount: parsedResponse.amount1,
+          denom: token1,
+        },
+        this.tokensMap
+      ),
       liquidityCreated: parsedResponse.liquidityCreated,
       lowerTick: BigNumber(parsedResponse.lowerTick).toFixed(),
       upperTick: BigNumber(parsedResponse.upperTick).toFixed(),
       txHash: response.transactionHash,
-      gasFees: extractGasFees(response),
+      gasFees: extractGasFees(response, this.tokensMap),
     };
   }
 
@@ -157,6 +180,7 @@ export class OsmosisCLPool {
     params: WithdrawPositionParams,
     memo: string = ""
   ): Promise<WithdrawPositionResponse> {
+    const { token0, token1 } = await this.getToken0Token1();
     const sender = await getSignerAddress(this.signer);
 
     const msg =
@@ -194,10 +218,23 @@ export class OsmosisCLPool {
     );
 
     return {
-      ...parsedResponse,
-      rewardsCollected: extractRewardsCollected(response),
+      tokenAmount0: parseCoinToTokenAmount(
+        {
+          amount: parsedResponse.amount0,
+          denom: token0,
+        },
+        this.tokensMap
+      ),
+      tokenAmount1: parseCoinToTokenAmount(
+        {
+          amount: parsedResponse.amount1,
+          denom: token1,
+        },
+        this.tokensMap
+      ),
+      rewardsCollected: extractRewardsCollected(response, this.tokensMap),
       txHash: response.transactionHash,
-      gasFees: extractGasFees(response),
+      gasFees: extractGasFees(response, this.tokensMap),
     };
   }
 
@@ -291,9 +328,8 @@ export class OsmosisCLPool {
     const lower = new BigNumber(positionInfo.position.lowerTick);
     const upper = new BigNumber(positionInfo.position.upperTick);
 
-    const osmosisTokenMap = findOsmosisTokensMap(this.environment);
-    const token0Registry = osmosisTokenMap[token0];
-    const token1Registry = osmosisTokenMap[token1];
+    const token0Registry = this.tokensMap[token0];
+    const token1Registry = this.tokensMap[token1];
 
     if (!token0Registry || !token1Registry) {
       throw new Error("Token from pair not found on our registry");

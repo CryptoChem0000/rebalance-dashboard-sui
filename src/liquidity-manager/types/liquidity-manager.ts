@@ -42,8 +42,8 @@ export type LiquidityManagerConfig = MakeLiquidityManagerParams & {
 
 export type PositionCreationResult = {
   positionId: string;
-  amount0: string;
-  amount1: string;
+  tokenAmount0: TokenAmount;
+  tokenAmount1: TokenAmount;
   liquidityCreated: string;
   lowerTick: string;
   upperTick: string;

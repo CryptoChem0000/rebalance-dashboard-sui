@@ -1,4 +1,3 @@
-// Type definitions
 export enum TransactionType {
   BOLT_ARCHWAY_SWAP = "bolt_archway_swap",
   CREATE_POOL = "create_pool",
@@ -41,6 +40,39 @@ export interface AccountTransactionRow
   successful: number; // SQLite stores boolean as 0/1
 }
 
+export interface VolumeByToken {
+  tokenName: string;
+  totalVolume: number;
+  totalSwaps?: number;
+  totalOperations?: number;
+  totalTransfers?: number;
+}
+
+export interface ProfitabilityByToken {
+  tokenName: string;
+  totalSent: number;
+  totalReceived: number;
+  netBalance: number;
+  roiPercentage: number | null;
+}
+
+export interface TransactionTypeSummary {
+  transactionType: string;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+}
+
+export interface AccountStats {
+  transactionType: string;
+  count: number;
+  successfulCount: number;
+  successRate: number;
+  firstTransaction: number;
+  lastTransaction: number;
+}
+
 // Repository interface for future PostgreSQL migration
 export interface TransactionRepository {
   addTransaction(tx: AccountTransaction): void;
@@ -48,15 +80,25 @@ export interface TransactionRepository {
   getTransaction(txHash: string, chainId: string): AccountTransaction | null;
   getTransactionEntries(txHash: string, chainId: string): AccountTransaction[];
   getAccountTransactions(
-    signerAddress: string,
     limit?: number,
-    offset?: number
+    offset?: number,
+    startTime?: Date,
+    endTime?: Date
   ): AccountTransaction[];
   getTransactionsByType(
-    signerAddress: string,
     transactionType: TransactionType,
-    limit?: number
+    limit?: number,
+    startTime?: Date,
+    endTime?: Date
   ): AccountTransaction[];
-  getAccountStats(signerAddress: string): any;
+  getAccountStats(startTime?: Date, endTime?: Date): AccountStats[];
+  getArchwayBoltVolume(startTime?: Date, endTime?: Date): VolumeByToken[];
+  getOsmosisVolume(startTime?: Date, endTime?: Date): VolumeByToken[];
+  getBridgeVolume(startTime?: Date, endTime?: Date): VolumeByToken[];
+  getProfitability(startTime?: Date, endTime?: Date): ProfitabilityByToken[];
+  getTransactionTypeSummary(
+    startTime?: Date,
+    endTime?: Date
+  ): TransactionTypeSummary[];
   close(): void;
 }

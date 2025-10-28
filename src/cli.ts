@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 
+import { DatabaseQueryClient, TransactionType } from "./database";
 import { LiquidityManager } from "./liquidity-manager";
-import { Logger, createRangeVisual, sleep } from "./utils";
+import { Logger, createRangeVisual, parseDateOptions, sleep } from "./utils";
 
 const program = new Command();
 
@@ -26,7 +27,6 @@ program
     "Keep running and check position every X seconds",
     (value) => parseInt(value, 10)
   )
-  .option("--no-log", "Disable logging to file")
   .option("--log-file <filename>", "Custom log filename")
   .action(async (options) => {
     const logger = new Logger(options.logFile);
@@ -113,7 +113,6 @@ program
     "Environment (mainnet or testnet)",
     "mainnet"
   )
-  .option("--no-log", "Disable logging to file")
   .option("--log-file <filename>", "Custom log filename")
   .action(async (options) => {
     const logger = new Logger(options.logFile);
@@ -152,7 +151,6 @@ program
     "Environment (mainnet or testnet)",
     "mainnet"
   )
-  .option("--no-log", "Disable logging to file")
   .option("--log-file <filename>", "Custom log filename")
   .action(async (options) => {
     const logger = new Logger(options.logFile);
@@ -183,7 +181,7 @@ program
       // Get pool info
       console.log("🏊 Pool Information:");
       console.log("─".repeat(50));
-      console.log(status.poolInfo)
+      console.log(status.poolInfo);
       console.log(`Pool ID: ${status.poolInfo.id}`);
       console.log(`Token 0: ${status.poolInfo.token0}`);
       console.log(`Token 1: ${status.poolInfo.token1}`);
@@ -259,6 +257,400 @@ program
       process.exit(1);
     } finally {
       logger.close();
+    }
+  });
+
+program
+  .command("report")
+  .description("Generate a full database report of all transactions")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option("--csv", "Export report to CSV files in reports/ folder")
+  .option("-s, --start <date>", "Start date (DD-MM-YYYY)")
+  .option("-E, --end <date>", "End date (DD-MM-YYYY)")
+  .action(async (options) => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      console.log("📊 Generating database report...\n");
+
+      const { startDate, endDate } = parseDateOptions(options);
+
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      const report = await dbQueryClient.getFullReport(startDate, endDate);
+      console.log(report);
+
+      if (options.csv) {
+        console.log("\n📁 Exporting to CSV files...");
+        const files = await dbQueryClient.exportFullReportToCSV(
+          startDate,
+          endDate
+        );
+        console.log("\n✅ CSV files exported:");
+        files.forEach((file) => console.log(`   - ${file}`));
+      }
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      process.exit(1);
+    } finally {
+      dbQueryClient?.close();
+    }
+  });
+
+// Volume command - shows trading volumes
+program
+  .command("volume")
+  .description("Show trading volume statistics")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option(
+    "-t, --type <type>",
+    "Volume type: archway, osmosis, bridge, or all",
+    "all"
+  )
+  .option("--csv", "Export to CSV file in reports/ folder")
+  .option("-s, --start <date>", "Start date (DD-MM-YYYY)")
+  .option("-E, --end <date>", "End date (DD-MM-YYYY)")
+  .action(async (options) => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      const { startDate, endDate } = parseDateOptions(options);
+
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      if (startDate || endDate) {
+        console.log(
+          `📅 Date range: ${
+            startDate ? startDate.toLocaleDateString() : "All"
+          } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
+        );
+      }
+
+      if (options.type === "all" || options.type === "archway") {
+        console.log("🔄 Archway Bolt Volume:");
+        console.log("─".repeat(60));
+        const archwayVolume = await dbQueryClient.getArchwayBoltVolume(
+          startDate,
+          endDate
+        );
+        console.log(dbQueryClient.formatVolumeData(archwayVolume) || "No data");
+        console.log();
+      }
+
+      if (options.type === "all" || options.type === "osmosis") {
+        console.log("🌊 Osmosis Volume:");
+        console.log("─".repeat(60));
+        const osmosisVolume = await dbQueryClient.getOsmosisVolume(
+          startDate,
+          endDate
+        );
+        console.log(dbQueryClient.formatVolumeData(osmosisVolume) || "No data");
+        console.log();
+      }
+
+      if (options.type === "all" || options.type === "bridge") {
+        console.log("🌉 Bridge Volume:");
+        console.log("─".repeat(60));
+        const bridgeVolume = await dbQueryClient.getBridgeVolume(
+          startDate,
+          endDate
+        );
+        console.log(dbQueryClient.formatVolumeData(bridgeVolume) || "No data");
+        console.log();
+      }
+
+      if (options.csv) {
+        console.log("\n📁 Exporting to CSV file(s)...");
+        const files = await dbQueryClient.exportVolumeToCSV(
+          options.type as "archway" | "osmosis" | "bridge" | "all",
+          startDate,
+          endDate
+        );
+        console.log("\n✅ CSV file(s) exported:");
+        files.forEach((file) => console.log(`   - ${file}`));
+      }
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      process.exit(1);
+    } finally {
+      dbQueryClient?.close();
+    }
+  });
+
+// Profit command - shows profitability analysis
+program
+  .command("profit")
+  .description("Show profitability analysis")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option("--csv", "Export to CSV file in reports/ folder")
+  .option("-s, --start <date>", "Start date (DD-MM-YYYY)")
+  .option("-E, --end <date>", "End date (DD-MM-YYYY)")
+  .action(async (options) => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      console.log("💰 Calculating profitability...\n");
+
+      const { startDate, endDate } = parseDateOptions(options);
+
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      if (startDate || endDate) {
+        console.log(
+          `📅 Date range: ${
+            startDate ? startDate.toLocaleDateString() : "All"
+          } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
+        );
+      }
+
+      const profitability = await dbQueryClient.getProfitability(
+        startDate,
+        endDate
+      );
+      console.log(dbQueryClient.formatProfitabilityData(profitability));
+
+      if (options.csv) {
+        console.log("\n📁 Exporting to CSV file...");
+        const file = await dbQueryClient.exportProfitabilityToCSV(
+          startDate,
+          endDate
+        );
+        console.log(`\n✅ CSV file exported: ${file}`);
+      }
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      process.exit(1);
+    } finally {
+      dbQueryClient?.close();
+    }
+  });
+
+// Transactions command - lists transactions
+program
+  .command("transactions")
+  .description("List recent transactions")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option("-l, --limit <number>", "Number of transactions to show", "20")
+  .option(
+    "-t, --type <type>",
+    "Filter by transaction type (bolt_archway_swap, create_position, etc.)"
+  )
+  .option("--csv", "Export to CSV file in reports/ folder")
+  .option("-s, --start <date>", "Start date (DD-MM-YYYY)")
+  .option("-E, --end <date>", "End date (DD-MM-YYYY)")
+  .action(async (options) => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      const { startDate, endDate } = parseDateOptions(options);
+
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      const limit = parseInt(options.limit, 10);
+
+      let transactions: any[];
+      if (options.type) {
+        console.log(`📄 Recent ${options.type} transactions:\n`);
+        transactions = await dbQueryClient.getTransactionsByType(
+          options.type as TransactionType,
+          limit,
+          startDate,
+          endDate
+        );
+      } else {
+        console.log(`📄 Recent transactions (limit: ${limit}):\n`);
+        transactions = await dbQueryClient.getRecentTransactions(
+          limit,
+          0,
+          startDate,
+          endDate
+        );
+      }
+
+      if (startDate || endDate) {
+        console.log(
+          `📅 Date range: ${
+            startDate ? startDate.toLocaleDateString() : "All"
+          } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
+        );
+      }
+
+      if (transactions.length === 0) {
+        console.log("No transactions found");
+        return;
+      }
+
+      // Display transactions
+      transactions.forEach((tx, index) => {
+        console.log(
+          `${index + 1}. ${new Date(
+            (tx.timestamp || 0) * 1000
+          ).toLocaleString()}`
+        );
+        console.log(`   Type: ${tx.transactionType}`);
+        console.log(`   Chain: ${tx.chainId}`);
+        console.log(`   Hash: ${tx.txHash}`);
+        console.log(`   Status: ${tx.successful ? "✅ Success" : "❌ Failed"}`);
+
+        if (tx.inputTokenName && tx.inputAmount) {
+          console.log(`   Input: ${tx.inputAmount} ${tx.inputTokenName}`);
+        }
+        if (tx.secondInputTokenName && tx.secondInputAmount) {
+          console.log(
+            `   Second Input: ${tx.secondInputAmount} ${tx.secondInputTokenName}`
+          );
+        }
+        if (tx.outputTokenName && tx.outputAmount) {
+          console.log(`   Output: ${tx.outputAmount} ${tx.outputTokenName}`);
+        }
+        if (tx.secondOutputTokenName && tx.secondOutputAmount) {
+          console.log(
+            `   Second Output: ${tx.secondOutputAmount} ${tx.secondOutputTokenName}`
+          );
+        }
+        if (tx.gasFeeAmount && tx.gasFeeTokenName) {
+          console.log(`   Gas: ${tx.gasFeeAmount} ${tx.gasFeeTokenName}`);
+        }
+        if (tx.destinationAddress) {
+          console.log(`   Destination: ${tx.destinationAddress}`);
+        }
+        if (!tx.successful && tx.error) {
+          console.log(`   Error: ${tx.error}`);
+        }
+        console.log();
+      });
+
+      if (options.csv) {
+        console.log("\n📁 Exporting to CSV file...");
+        const file = await dbQueryClient.exportTransactionsToCSV(
+          limit,
+          options.type as TransactionType,
+          startDate,
+          endDate
+        );
+        console.log(`\n✅ CSV file exported: ${file}`);
+      }
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      process.exit(1);
+    } finally {
+      dbQueryClient?.close();
+    }
+  });
+
+// Stats command - shows transaction statistics
+program
+  .command("stats")
+  .description("Show transaction statistics")
+  .option(
+    "-e, --environment <env>",
+    "Environment (mainnet or testnet)",
+    "mainnet"
+  )
+  .option("--csv", "Export to CSV file in reports/ folder")
+  .option("-s, --start <date>", "Start date (DD-MM-YYYY)")
+  .option("-E, --end <date>", "End date (DD-MM-YYYY)")
+  .action(async (options) => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      console.log("📈 Transaction Statistics\n");
+
+      const { startDate, endDate } = parseDateOptions(options);
+
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      if (startDate || endDate) {
+        console.log(
+          `📅 Date range: ${
+            startDate ? startDate.toLocaleDateString() : "All"
+          } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
+        );
+      }
+
+      const summary = await dbQueryClient.getTransactionTypeSummary(
+        startDate,
+        endDate
+      );
+      console.log(dbQueryClient.formatTransactionSummary(summary));
+
+      // Also show account stats
+      const accountStats = await dbQueryClient.getAccountStats(
+        startDate,
+        endDate
+      );
+      if (accountStats.length > 0) {
+        console.log("\n📊 Detailed Statistics:");
+        console.log("─".repeat(60));
+
+        accountStats.forEach((stat: any) => {
+          const typeFormatted = stat.transactionType
+            .split("_")
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ");
+
+          console.log(`\n${typeFormatted}:`);
+          console.log(`  Total: ${stat.count}`);
+          console.log(`  Successful: ${stat.successfulCount}`);
+          console.log(
+            `  Success Rate: ${(stat.successRate * 100).toFixed(1)}%`
+          );
+          console.log(
+            `  First: ${new Date(
+              stat.firstTransaction * 1000
+            ).toLocaleString()}`
+          );
+          console.log(
+            `  Last: ${new Date(stat.lastTransaction * 1000).toLocaleString()}`
+          );
+        });
+      }
+
+      if (options.csv) {
+        console.log("\n📁 Exporting to CSV files...");
+        const summaryFile = await dbQueryClient.exportTransactionSummaryToCSV(
+          startDate,
+          endDate
+        );
+        const statsFile = await dbQueryClient.exportAccountStatsToCSV(
+          startDate,
+          endDate
+        );
+        console.log("\n✅ CSV files exported:");
+        console.log(`   - ${summaryFile}`);
+        console.log(`   - ${statsFile}`);
+      }
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      process.exit(1);
+    } finally {
+      dbQueryClient?.close();
     }
   });
 

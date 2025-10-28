@@ -18,6 +18,6 @@ export const simulateFees = async (
 
   return {
     amount: [{ denom: NATIVE_TOKEN_DENOM, amount: FEE_VALUES.osmosis[fees] }],
-    gas: BigNumber(gasEstimated).times(gasMultiplier).toFixed(0),
+    gas: BigNumber(gasEstimated).times(gasMultiplier).toFixed(0, BigNumber.ROUND_CEIL),
   };
 };
