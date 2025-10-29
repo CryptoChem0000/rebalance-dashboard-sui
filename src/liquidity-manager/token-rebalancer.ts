@@ -13,6 +13,7 @@ import {
   ARCHWAY_IBC_TRANSFER_FEE,
   OSMOSIS_CREATE_LP_POSITION_FEE,
   OSMOSIS_IBC_TRANSFER_FEE,
+  OSMOSIS_WITHDRAW_LP_POSITION_FEE,
 } from "./constants";
 import { SQLiteTransactionRepository, TransactionType } from "../database";
 import { SkipBridging } from "../ibc-bridging";
@@ -34,7 +35,11 @@ import {
   parseCoinToTokenAmount,
 } from "../utils";
 
-import { RebalancerOutput, TokenRebalancerConfig } from "./types";
+import {
+  MultiChainTokenBalances,
+  RebalancerOutput,
+  TokenRebalancerConfig,
+} from "./types";
 
 export class TokenRebalancer {
   private archwaySigner: OfflineSigner;
@@ -67,43 +72,78 @@ export class TokenRebalancer {
     currentPrice: string,
     osmosisBalances?: Record<string, TokenAmount>
   ): Promise<RebalancerOutput> {
-    const innerOsmosisBalances =
-      osmosisBalances ?? (await this.getOsmosisAccountBalances());
+    // Get balances from both chains
+    const [archwayBalances, innerOsmosisBalances] = await Promise.all([
+      this.getArchwayAccountBalances(),
+      osmosisBalances ?? (await this.getOsmosisAccountBalances()),
+    ]);
 
-    const expectedFeeNeededIfNative = BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(
-      OSMOSIS_CREATE_LP_POSITION_FEE
+    // Get token balance information for both tokens across both chains
+    const token0MultiChainBalances = await this.getMultichainTokenBalances(
+      token0,
+      innerOsmosisBalances,
+      archwayBalances
+    );
+    const token1MultiChainBalances = await this.getMultichainTokenBalances(
+      token1,
+      innerOsmosisBalances,
+      archwayBalances
     );
 
-    const balance0Value = BigNumber.max(
-      BigNumber(innerOsmosisBalances[token0.denom]?.amount ?? 0).minus(
-        token0.denom === this.osmosisChainInfo.nativeToken.denom
-          ? expectedFeeNeededIfNative
-          : 0
-      ),
-      0
-    );
-    const balance1Value = BigNumber.max(
-      BigNumber(innerOsmosisBalances[token1.denom]?.amount ?? 0).minus(
-        token1.denom === this.osmosisChainInfo.nativeToken.denom
-          ? expectedFeeNeededIfNative
-          : 0
-      ),
-      0
-    );
+    // Use the total available balances that already consider fees
+    const availableToken0Total = token0MultiChainBalances.totalAvailableBalance;
+    const availableToken1Total = token1MultiChainBalances.totalAvailableBalance;
 
-    if (balance0Value.isZero() && balance1Value.isZero()) {
+    if (availableToken0Total.isZero() && availableToken1Total.isZero()) {
       throw new Error(
-        `Your account doesn't have enough significant balance of ${token0.name} or ${token1.name} on Osmosis chain`
+        `Your account doesn't have enough significant balance of ${token0.name} or ${token1.name} across Osmosis and Archway chains after considering gas fees`
       );
     }
 
+    // Log multi-chain balances
+    console.log(`Multi-chain balances:`);
+    console.log(
+      `  ${token0.name}: ${
+        new TokenAmount(availableToken0Total, token0).humanReadableAmount
+      } available (Osmosis: ${
+        new TokenAmount(
+          token0MultiChainBalances.availableOsmosisBalance,
+          token0
+        ).humanReadableAmount
+      }, Archway: ${
+        new TokenAmount(
+          token0MultiChainBalances.availableArchwayBalance,
+          token0
+        ).humanReadableAmount
+      })`
+    );
+    console.log(
+      `  ${token1.name}: ${
+        new TokenAmount(availableToken1Total, token1).humanReadableAmount
+      } available (Osmosis: ${
+        new TokenAmount(
+          token1MultiChainBalances.availableOsmosisBalance,
+          token1
+        ).humanReadableAmount
+      }, Archway: ${
+        new TokenAmount(
+          token1MultiChainBalances.availableArchwayBalance,
+          token1
+        ).humanReadableAmount
+      })`
+    );
+
     // Calculate total value in terms of token1
-    const balance0InToken1 = balance0Value.times(currentPrice);
-    const totalValueInToken1 = balance0InToken1.plus(balance1Value);
+    const balance0InToken1 = availableToken0Total.times(currentPrice);
+    const totalValueInToken1 = balance0InToken1.plus(availableToken1Total);
 
     // Calculate target amounts for 50/50 split
-    const targetValueInToken1 = totalValueInToken1.div(2);
-    const targetAmount0 = targetValueInToken1.div(currentPrice);
+    const targetValueInToken1 = totalValueInToken1
+      .div(2)
+      .decimalPlaces(0, BigNumber.ROUND_FLOOR);
+    const targetAmount0 = targetValueInToken1
+      .div(currentPrice)
+      .decimalPlaces(0, BigNumber.ROUND_FLOOR);
     const targetAmount1 = targetValueInToken1;
 
     console.log(
@@ -115,8 +155,8 @@ export class TokenRebalancer {
     );
 
     // Check if we need to rebalance
-    const token0Excess = balance0Value.minus(targetAmount0);
-    const token1Excess = balance1Value.minus(targetAmount1);
+    const token0Excess = availableToken0Total.minus(targetAmount0);
+    const token1Excess = availableToken1Total.minus(targetAmount1);
 
     // If already balanced (within 0.1% tolerance), return current balances
     const tolerance = BigNumber(0.001);
@@ -125,14 +165,19 @@ export class TokenRebalancer {
       token1Excess.abs().div(targetAmount1).lt(tolerance)
     ) {
       console.log("Tokens already balanced within tolerance");
-      return {
-        token0: new TokenAmount(balance0Value, token0),
-        token1: new TokenAmount(balance1Value, token0),
-        osmosisBalances: innerOsmosisBalances,
-      };
+      // Bridge any tokens on Archway back to Osmosis if needed
+      await this.bridgeArchwayBalancesToOsmosisIfNeeded(
+        token0MultiChainBalances,
+        token1MultiChainBalances,
+        archwayBalances
+      );
+
+      return this.getSafeOsmosisBalancesRebalancerOutput(
+        token0MultiChainBalances.osmosisToken,
+        token1MultiChainBalances.osmosisToken
+      );
     }
 
-    // Determine which token we have excess of
     // Determine which token we have excess of
     if (token0Excess.gt(0)) {
       // We have excess token0, need to swap some for token1
@@ -141,11 +186,12 @@ export class TokenRebalancer {
           new TokenAmount(token0Excess, token0).humanReadableAmount
         }`
       );
-      return await this.handleExcessToken(
-        new TokenAmount(balance0Value, token0),
-        new TokenAmount(balance1Value, token1),
+      return await this.handleExcessTokenWithMultiChain(
+        token0MultiChainBalances,
+        token1MultiChainBalances,
         currentPrice,
         innerOsmosisBalances,
+        archwayBalances,
         0 // excess token index
       );
     } else {
@@ -155,56 +201,101 @@ export class TokenRebalancer {
           new TokenAmount(token1Excess.abs(), token1).humanReadableAmount
         }`
       );
-      return await this.handleExcessToken(
-        new TokenAmount(balance0Value, token0),
-        new TokenAmount(balance1Value, token1),
+      return await this.handleExcessTokenWithMultiChain(
+        token0MultiChainBalances,
+        token1MultiChainBalances,
         currentPrice,
         innerOsmosisBalances,
+        archwayBalances,
         1 // excess token index
       );
     }
   }
 
-  private async handleExcessToken(
-    tokenAmount0: TokenAmount,
-    tokenAmount1: TokenAmount,
+  private async getMultichainTokenBalances(
+    token: RegistryToken,
+    osmosisBalances: Record<string, TokenAmount>,
+    archwayBalances: Record<string, TokenAmount>
+  ): Promise<MultiChainTokenBalances> {
+    const archwayToken = findRegistryTokenEquivalentOnOtherChain(
+      token,
+      this.archwayChainInfo.id
+    );
+
+    if (!archwayToken) {
+      throw new Error(`Token ${token.name} not found on Archway`);
+    }
+
+    const osmosisBalance =
+      osmosisBalances[token.denom] ?? new TokenAmount(0, token);
+    const archwayBalance =
+      archwayBalances[archwayToken.denom] ?? new TokenAmount(0, archwayToken);
+
+    // Calculate available Osmosis balance considering fees if it's the native token
+    const osmosisFeeReserve =
+      token.denom === this.osmosisChainInfo.nativeToken.denom
+        ? BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(
+            OSMOSIS_CREATE_LP_POSITION_FEE
+          )
+        : BigNumber(0);
+
+    const availableOsmosisBalance = BigNumber.max(
+      BigNumber(osmosisBalance.amount).minus(osmosisFeeReserve),
+      0
+    );
+
+    // Calculate available Archway balance considering fees if it's the native token (use double IBC fees in case there is leftover of both tokens)
+    const archwayFeeReserve =
+      archwayToken.denom === this.archwayChainInfo.nativeToken.denom
+        ? BigNumber(ARCHWAY_BOLT_SWAP_FEE)
+            .plus(ARCHWAY_IBC_TRANSFER_FEE)
+            .plus(ARCHWAY_IBC_TRANSFER_FEE)
+        : BigNumber(0);
+
+    const availableArchwayBalance = BigNumber.max(
+      BigNumber(archwayBalance.amount).minus(archwayFeeReserve),
+      0
+    );
+
+    const totalAvailableBalance = availableOsmosisBalance.plus(
+      availableArchwayBalance
+    );
+
+    return {
+      osmosisBalance,
+      archwayBalance,
+      availableOsmosisBalance,
+      availableArchwayBalance,
+      totalAvailableBalance,
+      osmosisToken: token,
+      archwayToken,
+    };
+  }
+
+  private async handleExcessTokenWithMultiChain(
+    token0MultiChainBalances: MultiChainTokenBalances,
+    token1MultiChainBalances: MultiChainTokenBalances,
     osmosisPrice: string,
     osmosisBalances: Record<string, TokenAmount>,
+    archwayBalances: Record<string, TokenAmount>,
     excessTokenIndex: 0 | 1
   ): Promise<RebalancerOutput> {
-    const token0 = tokenAmount0.token;
-    const token1 = tokenAmount1.token;
-
-    // Determine which token we have excess of
-    const excessToken = excessTokenIndex === 0 ? token0 : token1;
-    const targetToken = excessTokenIndex === 0 ? token1 : token0;
+    const excessTokenInfo =
+      excessTokenIndex === 0
+        ? token0MultiChainBalances
+        : token1MultiChainBalances;
+    const targetTokenInfo =
+      excessTokenIndex === 0
+        ? token1MultiChainBalances
+        : token0MultiChainBalances;
 
     const osmosisAddress = await getSignerAddress(this.osmosisSigner);
     const archwayAddress = await getSignerAddress(this.archwaySigner);
 
-    // Find Archway equivalents
-    const token0Archway = findRegistryTokenEquivalentOnOtherChain(
-      token0,
-      this.archwayChainInfo.id
-    );
-    const token1Archway = findRegistryTokenEquivalentOnOtherChain(
-      token1,
-      this.archwayChainInfo.id
-    );
-
-    if (!token0Archway || !token1Archway) {
-      throw new Error("Tokens not found on Archway");
-    }
-
-    const excessTokenArchway =
-      excessTokenIndex === 0 ? token0Archway : token1Archway;
-    const targetTokenArchway =
-      excessTokenIndex === 0 ? token1Archway : token0Archway;
-
     // Get Bolt price on Archway
     const boltPrice = await getPairPriceOnBoltArchway(
-      token0Archway,
-      token1Archway,
+      token0MultiChainBalances.archwayToken,
+      token1MultiChainBalances.archwayToken,
       {
         environment: this.environment,
       }
@@ -213,149 +304,203 @@ export class TokenRebalancer {
     console.log(
       `Bolt price: ${humanReadablePrice(
         boltPrice,
-        token0,
-        token1
-      )}, Osmosis price: ${humanReadablePrice(osmosisPrice, token0, token1)}`
+        token0MultiChainBalances.osmosisToken,
+        token1MultiChainBalances.osmosisToken
+      )}, Osmosis price: ${humanReadablePrice(
+        osmosisPrice,
+        token0MultiChainBalances.osmosisToken,
+        token1MultiChainBalances.osmosisToken
+      )}`
     );
 
-    // Calculate the exact amount to bridge
-    const balance0 = BigNumber(tokenAmount0.amount);
-    const balance1 = BigNumber(tokenAmount1.amount);
+    // Calculate the exact amount to swap using available totals
+    const availableToken0Total = token0MultiChainBalances.totalAvailableBalance;
+    const availableToken1Total = token1MultiChainBalances.totalAvailableBalance;
 
-    let amountToBridge: BigNumber;
+    let amountToSwap: BigNumber;
     let expectedOutput: BigNumber;
 
     if (excessTokenIndex === 0) {
       // Excess token0 logic
-      const numerator = balance0.times(osmosisPrice).minus(balance1);
+      const numerator = availableToken0Total
+        .times(osmosisPrice)
+        .minus(availableToken1Total);
       const denominator = BigNumber(osmosisPrice).plus(BigNumber(boltPrice));
-      amountToBridge = numerator.div(denominator);
-      expectedOutput = BigNumber(amountToBridge).times(boltPrice);
+      amountToSwap = numerator.div(denominator);
+      expectedOutput = BigNumber(amountToSwap).times(boltPrice);
     } else {
       // Excess token1 logic
-      const numerator = balance1.minus(balance0.times(osmosisPrice));
+      const numerator = availableToken1Total.minus(
+        availableToken0Total.times(osmosisPrice)
+      );
       const denominator = BigNumber(osmosisPrice).div(boltPrice).plus(1);
-      amountToBridge = numerator.div(denominator);
-      expectedOutput = amountToBridge.div(boltPrice);
+      amountToSwap = numerator.div(denominator);
+      expectedOutput = amountToSwap.div(boltPrice);
     }
 
-    const inputTokenAmount = new TokenAmount(amountToBridge, excessToken);
+    const swapTokenAmount = new TokenAmount(
+      amountToSwap,
+      excessTokenInfo.osmosisToken
+    );
     const expectedOutputTokenAmount = new TokenAmount(
       expectedOutput,
-      targetToken
+      targetTokenInfo.osmosisToken
     );
 
     console.log(
-      `Calculated optimal bridge amount: ${inputTokenAmount.humanReadableAmount} ${inputTokenAmount.token.name}`
+      `Calculated optimal swap amount: ${swapTokenAmount.humanReadableAmount} ${swapTokenAmount.token.name}`
     );
     console.log(
-      `Expected ${targetToken.name} output: ${expectedOutputTokenAmount.humanReadableAmount} ${targetToken.name}`
+      `Expected ${targetTokenInfo.osmosisToken.name} output: ${expectedOutputTokenAmount.humanReadableAmount}`
     );
 
     // Verify minimum swap amount on bolt
     const boltClient = BoltOnArchway.makeBoltClient(this.environment);
     const boltPoolConfig = await boltClient.getPoolConfigByDenom(
-      targetTokenArchway.denom
+      targetTokenInfo.archwayToken.denom
     );
+
     if (expectedOutput.lte(boltPoolConfig.minBaseOut)) {
       console.log(
-        "Amount we want to bridge and swap is smaller than the minimum out on bolt exchange"
+        "Swap amount is smaller than minimum output on Bolt exchange"
+      );
+      // Just bridge any Archway balances back to Osmosis
+      await this.bridgeArchwayBalancesToOsmosisIfNeeded(
+        token0MultiChainBalances,
+        token1MultiChainBalances,
+        archwayBalances
       );
       return {
-        token0: tokenAmount0,
-        token1: tokenAmount1,
-        osmosisBalances,
+        token0: new TokenAmount(
+          token0MultiChainBalances.totalAvailableBalance,
+          token0MultiChainBalances.osmosisToken
+        ),
+        token1: new TokenAmount(
+          token1MultiChainBalances.totalAvailableBalance,
+          token1MultiChainBalances.osmosisToken
+        ),
       };
     }
-    boltClient.getCosmWasmClient();
-    // Assert fees on both chains
-    assertEnoughBalanceForFees(
-      osmosisBalances,
-      this.osmosisChainInfo.nativeToken,
-      BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(OSMOSIS_CREATE_LP_POSITION_FEE),
-      "bridging to Archway for rebalancing"
-    );
-    const archwayBalances = await this.getArchwayAccountBalances();
+
+    // Assert fees on Archway for swap
     assertEnoughBalanceForFees(
       archwayBalances,
       this.archwayChainInfo.nativeToken,
       BigNumber(ARCHWAY_BOLT_SWAP_FEE).plus(ARCHWAY_IBC_TRANSFER_FEE),
-      "bridge and swap on archway"
+      "swap on Bolt and bridge back"
     );
 
-    // Bridge excess token to Archway
-    console.log(
-      `Bridging ${inputTokenAmount.humanReadableAmount} ${inputTokenAmount.token.name} to Archway...`
-    );
-    const bridgeResult = await this.skipBridging.bridgeToken(
-      this.osmosisSigner,
-      this.keyStore,
-      {
-        fromToken: inputTokenAmount.token,
-        toChainId: this.archwayChainInfo.id,
-        amount: inputTokenAmount.amount,
-      }
+    // Determine how much we need on Archway for the swap
+    let amountNeededOnArchway = amountToSwap;
+    let amountToBridgeToArchway = BigNumber.max(
+      amountNeededOnArchway.minus(excessTokenInfo.availableArchwayBalance),
+      0
     );
 
-    const bridgeGasFees = await this.findGasFeesOfTx(
-      bridgeResult.txHash,
-      this.osmosisChainInfo,
-      this.osmosisTokensMap
-    );
+    // Handle bridging excess token to Archway if needed
+    if (amountToBridgeToArchway.gt(0)) {
+      // Assert fees on Osmosis
+      assertEnoughBalanceForFees(
+        osmosisBalances,
+        this.osmosisChainInfo.nativeToken,
+        BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(
+          OSMOSIS_CREATE_LP_POSITION_FEE
+        ),
+        "bridging to Archway for rebalancing"
+      );
 
-    this.database.addTransaction({
-      signerAddress: osmosisAddress,
-      chainId: this.osmosisChainInfo.id,
-      transactionType: TransactionType.IBC_TRANSFER,
-      inputAmount: inputTokenAmount.humanReadableAmount,
-      inputTokenDenom: inputTokenAmount.token.denom,
-      inputTokenName: inputTokenAmount.token.name,
-      outputAmount: inputTokenAmount.humanReadableAmount,
-      outputTokenDenom: bridgeResult.destinationToken.denom,
-      outputTokenName: bridgeResult.destinationToken.name,
-      destinationAddress: bridgeResult.destinationAddress,
-      destinationChainId: bridgeResult.destinationToken.chainId,
-      gasFeeAmount: bridgeGasFees?.humanReadableAmount,
-      gasFeeTokenDenom: bridgeGasFees?.token.denom,
-      gasFeeTokenName: bridgeGasFees?.token.name,
-      txHash: bridgeResult.txHash,
-      successful: true,
-    });
+      console.log(
+        `Bridging ${
+          new TokenAmount(amountToBridgeToArchway, excessTokenInfo.osmosisToken)
+            .humanReadableAmount
+        } ${excessTokenInfo.osmosisToken.name} to Archway...`
+      );
 
-    console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+      const bridgeResult = await this.skipBridging.bridgeToken(
+        this.osmosisSigner,
+        this.keyStore,
+        {
+          fromToken: excessTokenInfo.osmosisToken,
+          toChainId: this.archwayChainInfo.id,
+          amount: amountToBridgeToArchway.toFixed(0),
+        }
+      );
+
+      const bridgeGasFees = await this.findGasFeesOfTx(
+        bridgeResult.txHash,
+        this.osmosisChainInfo
+      );
+
+      this.database.addTransaction({
+        signerAddress: osmosisAddress,
+        chainId: this.osmosisChainInfo.id,
+        transactionType: TransactionType.IBC_TRANSFER,
+        inputAmount: new TokenAmount(
+          amountToBridgeToArchway,
+          excessTokenInfo.osmosisToken
+        ).humanReadableAmount,
+        inputTokenDenom: excessTokenInfo.osmosisToken.denom,
+        inputTokenName: excessTokenInfo.osmosisToken.name,
+        outputAmount: new TokenAmount(
+          amountToBridgeToArchway,
+          excessTokenInfo.archwayToken
+        ).humanReadableAmount,
+        outputTokenDenom: bridgeResult.destinationToken.denom,
+        outputTokenName: bridgeResult.destinationToken.name,
+        destinationAddress: bridgeResult.destinationAddress,
+        destinationChainId: bridgeResult.destinationToken.chainId,
+        gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+        gasFeeTokenDenom: bridgeGasFees?.token.denom,
+        gasFeeTokenName: bridgeGasFees?.token.name,
+        txHash: bridgeResult.txHash,
+        successful: true,
+      });
+
+      console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+    } else {
+      console.log(
+        `Already have ${
+          new TokenAmount(
+            excessTokenInfo.availableArchwayBalance,
+            excessTokenInfo.archwayToken
+          ).humanReadableAmount
+        } ${
+          excessTokenInfo.archwayToken.name
+        } available on Archway, no bridging needed for swap`
+      );
+    }
 
     // Swap on Bolt
     console.log(
-      `Swapping ${inputTokenAmount.humanReadableAmount} ${excessTokenArchway.name} for ~${expectedOutputTokenAmount.humanReadableAmount} ${targetTokenArchway.name} on Bolt...`
+      `Swapping ${swapTokenAmount.humanReadableAmount} ${excessTokenInfo.archwayToken.name} for ~${expectedOutputTokenAmount.humanReadableAmount} ${targetTokenInfo.archwayToken.name} on Bolt...`
     );
 
     const swapResult = await boltClient.swap(
       {
-        assetIn: excessTokenArchway.denom,
-        assetOut: targetTokenArchway.denom,
-        amountIn: inputTokenAmount.amount,
+        assetIn: excessTokenInfo.archwayToken.denom,
+        assetOut: targetTokenInfo.archwayToken.denom,
+        amountIn: amountToSwap.toFixed(0),
       },
       this.archwaySigner
     );
 
     const boltSwapOutput = new TokenAmount(
       swapResult.amountOut,
-      targetTokenArchway
+      targetTokenInfo.archwayToken
     );
 
     const boltSwapGasFees = await this.findGasFeesOfTx(
       swapResult.txHash,
-      this.archwayChainInfo,
-      this.archwayTokensMap
+      this.archwayChainInfo
     );
 
     this.database.addTransaction({
       signerAddress: archwayAddress,
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.BOLT_ARCHWAY_SWAP,
-      inputAmount: inputTokenAmount.humanReadableAmount,
-      inputTokenDenom: excessTokenArchway.denom,
-      inputTokenName: excessTokenArchway.name,
+      inputAmount: swapTokenAmount.humanReadableAmount,
+      inputTokenDenom: excessTokenInfo.archwayToken.denom,
+      inputTokenName: excessTokenInfo.archwayToken.name,
       outputAmount: boltSwapOutput.humanReadableAmount,
       outputTokenDenom: boltSwapOutput.token.denom,
       outputTokenName: boltSwapOutput.token.name,
@@ -368,60 +513,331 @@ export class TokenRebalancer {
 
     console.log(`Swap complete. Tx: ${swapResult.txHash}`);
 
-    // Bridge target token back to Osmosis
-    console.log(
-      `Bridging ${boltSwapOutput.humanReadableAmount} ${targetTokenArchway.name} back to Osmosis...`
+    // Bridge all balances back to Osmosis
+    await this.bridgeAllArchwayBalancesToOsmosis(
+      token0MultiChainBalances.archwayToken,
+      token1MultiChainBalances.archwayToken
     );
 
-    const bridgeBackResult = await this.skipBridging.bridgeToken(
-      this.archwaySigner,
-      this.keyStore,
-      {
-        fromToken: targetTokenArchway,
-        toChainId: this.osmosisChainInfo.id,
-        amount: boltSwapOutput.amount,
+    return this.getSafeOsmosisBalancesRebalancerOutput(
+      token0MultiChainBalances.osmosisToken,
+      token1MultiChainBalances.osmosisToken
+    );
+  }
+
+  private async bridgeArchwayBalancesToOsmosisIfNeeded(
+    token0MultiChainBalances: MultiChainTokenBalances,
+    token1MultiChainBalances: MultiChainTokenBalances,
+    archwayBalances: Record<string, TokenAmount>
+  ): Promise<void> {
+    const archwayAddress = await getSignerAddress(this.archwaySigner);
+
+    // Bridge token0 if it has available balance on Archway
+    if (token0MultiChainBalances.availableArchwayBalance.gt(0)) {
+      console.log(
+        `Bridging ${
+          new TokenAmount(
+            token0MultiChainBalances.availableArchwayBalance,
+            token0MultiChainBalances.archwayToken
+          ).humanReadableAmount
+        } ${
+          token0MultiChainBalances.archwayToken.name
+        } from Archway to Osmosis...`
+      );
+
+      // Assert fees on Archway for bridge
+      assertEnoughBalanceForFees(
+        archwayBalances,
+        this.archwayChainInfo.nativeToken,
+        ARCHWAY_IBC_TRANSFER_FEE,
+        "bridge from Archway to Osmosis"
+      );
+
+      const bridgeResult = await this.skipBridging.bridgeToken(
+        this.archwaySigner,
+        this.keyStore,
+        {
+          fromToken: token0MultiChainBalances.archwayToken,
+          toChainId: this.osmosisChainInfo.id,
+          amount: token0MultiChainBalances.availableArchwayBalance.toFixed(0),
+        }
+      );
+
+      const bridgeGasFees = await this.findGasFeesOfTx(
+        bridgeResult.txHash,
+        this.archwayChainInfo
+      );
+
+      this.database.addTransaction({
+        signerAddress: archwayAddress,
+        chainId: this.archwayChainInfo.id,
+        transactionType: TransactionType.IBC_TRANSFER,
+        inputAmount: new TokenAmount(
+          token0MultiChainBalances.availableArchwayBalance,
+          token0MultiChainBalances.archwayToken
+        ).humanReadableAmount,
+        inputTokenDenom: token0MultiChainBalances.archwayToken.denom,
+        inputTokenName: token0MultiChainBalances.archwayToken.name,
+        outputAmount: new TokenAmount(
+          token0MultiChainBalances.availableArchwayBalance,
+          token0MultiChainBalances.osmosisToken
+        ).humanReadableAmount,
+        outputTokenDenom: bridgeResult.destinationToken.denom,
+        outputTokenName: bridgeResult.destinationToken.name,
+        destinationAddress: bridgeResult.destinationAddress,
+        destinationChainId: bridgeResult.destinationToken.chainId,
+        gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+        gasFeeTokenDenom: bridgeGasFees?.token.denom,
+        gasFeeTokenName: bridgeGasFees?.token.name,
+        txHash: bridgeResult.txHash,
+        successful: true,
+      });
+
+      console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+    }
+
+    // Bridge token1 if it has available balance on Archway
+    if (token1MultiChainBalances.availableArchwayBalance.gt(0)) {
+      console.log(
+        `Bridging ${
+          new TokenAmount(
+            token1MultiChainBalances.availableArchwayBalance,
+            token1MultiChainBalances.archwayToken
+          ).humanReadableAmount
+        } ${
+          token1MultiChainBalances.archwayToken.name
+        } from Archway to Osmosis...`
+      );
+
+      // Assert fees on Archway for bridge
+      assertEnoughBalanceForFees(
+        archwayBalances,
+        this.archwayChainInfo.nativeToken,
+        ARCHWAY_IBC_TRANSFER_FEE,
+        "bridge from Archway to Osmosis"
+      );
+
+      const bridgeResult = await this.skipBridging.bridgeToken(
+        this.archwaySigner,
+        this.keyStore,
+        {
+          fromToken: token1MultiChainBalances.archwayToken,
+          toChainId: this.osmosisChainInfo.id,
+          amount: token1MultiChainBalances.availableArchwayBalance.toFixed(0),
+        }
+      );
+
+      const bridgeGasFees = await this.findGasFeesOfTx(
+        bridgeResult.txHash,
+        this.archwayChainInfo
+      );
+
+      this.database.addTransaction({
+        signerAddress: archwayAddress,
+        chainId: this.archwayChainInfo.id,
+        transactionType: TransactionType.IBC_TRANSFER,
+        inputAmount: new TokenAmount(
+          token1MultiChainBalances.availableArchwayBalance,
+          token1MultiChainBalances.archwayToken
+        ).humanReadableAmount,
+        inputTokenDenom: token1MultiChainBalances.archwayToken.denom,
+        inputTokenName: token1MultiChainBalances.archwayToken.name,
+        outputAmount: new TokenAmount(
+          token1MultiChainBalances.availableArchwayBalance,
+          token1MultiChainBalances.osmosisToken
+        ).humanReadableAmount,
+        outputTokenDenom: bridgeResult.destinationToken.denom,
+        outputTokenName: bridgeResult.destinationToken.name,
+        destinationAddress: bridgeResult.destinationAddress,
+        destinationChainId: bridgeResult.destinationToken.chainId,
+        gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+        gasFeeTokenDenom: bridgeGasFees?.token.denom,
+        gasFeeTokenName: bridgeGasFees?.token.name,
+        txHash: bridgeResult.txHash,
+        successful: true,
+      });
+
+      console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+    }
+  }
+
+  private async bridgeAllArchwayBalancesToOsmosis(
+    token0Archway: RegistryToken,
+    token1Archway: RegistryToken
+  ): Promise<void> {
+    const archwayAddress = await getSignerAddress(this.archwaySigner);
+    const archwayBalances = await this.getArchwayAccountBalances();
+
+    // Calculate fee reserve for native token
+    const nativeTokenFeeReserve = BigNumber(ARCHWAY_BOLT_SWAP_FEE).plus(
+      ARCHWAY_IBC_TRANSFER_FEE
+    );
+
+    // Bridge token0 if present
+    const token0Balance = archwayBalances[token0Archway.denom];
+    if (token0Balance && token0Balance.amount !== "0") {
+      // Calculate available amount considering fees if it's the native token
+      let availableAmount = BigNumber(token0Balance.amount);
+
+      if (token0Archway.denom === this.archwayChainInfo.nativeToken.denom) {
+        availableAmount = BigNumber.max(
+          availableAmount.minus(nativeTokenFeeReserve),
+          0
+        );
+
+        if (availableAmount.isZero()) {
+          console.log(
+            `Skipping bridge of ${token0Archway.name} - insufficient balance after reserving gas fees`
+          );
+          return;
+        }
       }
-    );
 
-    const bridgeBackGasFees = await this.findGasFeesOfTx(
-      bridgeBackResult.txHash,
-      this.archwayChainInfo,
-      this.archwayTokensMap
-    );
+      console.log(
+        `Bridging ${
+          new TokenAmount(availableAmount, token0Archway).humanReadableAmount
+        } ${token0Archway.name} back to Osmosis...`
+      );
 
-    this.database.addTransaction({
-      signerAddress: archwayAddress,
-      chainId: this.archwayChainInfo.id,
-      transactionType: TransactionType.IBC_TRANSFER,
-      inputAmount: boltSwapOutput.humanReadableAmount,
-      inputTokenDenom: boltSwapOutput.token.denom,
-      inputTokenName: boltSwapOutput.token.name,
-      outputAmount: boltSwapOutput.humanReadableAmount,
-      outputTokenDenom: bridgeBackResult.destinationToken.denom,
-      outputTokenName: bridgeBackResult.destinationToken.name,
-      destinationAddress: bridgeBackResult.destinationAddress,
-      destinationChainId: bridgeBackResult.destinationToken.chainId,
-      gasFeeAmount: bridgeBackGasFees?.humanReadableAmount,
-      gasFeeTokenDenom: bridgeBackGasFees?.token.denom,
-      gasFeeTokenName: bridgeBackGasFees?.token.name,
-      txHash: bridgeBackResult.txHash,
-      successful: true,
-    });
+      const bridgeResult = await this.skipBridging.bridgeToken(
+        this.archwaySigner,
+        this.keyStore,
+        {
+          fromToken: token0Archway,
+          toChainId: this.osmosisChainInfo.id,
+          amount: availableAmount.toFixed(0),
+        }
+      );
 
-    console.log(`Bridge back complete. Tx: ${bridgeBackResult.txHash}`);
+      const bridgeGasFees = await this.findGasFeesOfTx(
+        bridgeResult.txHash,
+        this.archwayChainInfo
+      );
 
-    // Get updated balances
+      this.database.addTransaction({
+        signerAddress: archwayAddress,
+        chainId: this.archwayChainInfo.id,
+        transactionType: TransactionType.IBC_TRANSFER,
+        inputAmount: new TokenAmount(availableAmount, token0Archway)
+          .humanReadableAmount,
+        inputTokenDenom: token0Archway.denom,
+        inputTokenName: token0Archway.name,
+        outputAmount: new TokenAmount(
+          availableAmount,
+          bridgeResult.destinationToken
+        ).humanReadableAmount,
+        outputTokenDenom: bridgeResult.destinationToken.denom,
+        outputTokenName: bridgeResult.destinationToken.name,
+        destinationAddress: bridgeResult.destinationAddress,
+        destinationChainId: bridgeResult.destinationToken.chainId,
+        gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+        gasFeeTokenDenom: bridgeGasFees?.token.denom,
+        gasFeeTokenName: bridgeGasFees?.token.name,
+        txHash: bridgeResult.txHash,
+        successful: true,
+      });
+
+      console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+    }
+
+    // Bridge token1 if present
+    const token1Balance = archwayBalances[token1Archway.denom];
+    if (token1Balance && token1Balance.amount !== "0") {
+      // Calculate available amount considering fees if it's the native token
+      let availableAmount = BigNumber(token1Balance.amount);
+
+      if (token1Archway.denom === this.archwayChainInfo.nativeToken.denom) {
+        availableAmount = BigNumber.max(
+          availableAmount.minus(nativeTokenFeeReserve),
+          0
+        );
+
+        if (availableAmount.isZero()) {
+          console.log(
+            `Skipping bridge of ${token1Archway.name} - insufficient balance after reserving gas fees`
+          );
+          return;
+        }
+      }
+
+      console.log(
+        `Bridging ${
+          new TokenAmount(availableAmount, token1Archway).humanReadableAmount
+        } ${token1Archway.name} back to Osmosis...`
+      );
+
+      const bridgeResult = await this.skipBridging.bridgeToken(
+        this.archwaySigner,
+        this.keyStore,
+        {
+          fromToken: token1Archway,
+          toChainId: this.osmosisChainInfo.id,
+          amount: availableAmount.toFixed(0),
+        }
+      );
+
+      const bridgeGasFees = await this.findGasFeesOfTx(
+        bridgeResult.txHash,
+        this.archwayChainInfo
+      );
+
+      this.database.addTransaction({
+        signerAddress: archwayAddress,
+        chainId: this.archwayChainInfo.id,
+        transactionType: TransactionType.IBC_TRANSFER,
+        inputAmount: new TokenAmount(availableAmount, token1Archway)
+          .humanReadableAmount,
+        inputTokenDenom: token1Archway.denom,
+        inputTokenName: token1Archway.name,
+        outputAmount: new TokenAmount(
+          availableAmount,
+          bridgeResult.destinationToken
+        ).humanReadableAmount,
+        outputTokenDenom: bridgeResult.destinationToken.denom,
+        outputTokenName: bridgeResult.destinationToken.name,
+        destinationAddress: bridgeResult.destinationAddress,
+        destinationChainId: bridgeResult.destinationToken.chainId,
+        gasFeeAmount: bridgeGasFees?.humanReadableAmount,
+        gasFeeTokenDenom: bridgeGasFees?.token.denom,
+        gasFeeTokenName: bridgeGasFees?.token.name,
+        txHash: bridgeResult.txHash,
+        successful: true,
+      });
+
+      console.log(`Bridge complete. Tx: ${bridgeResult.txHash}`);
+    }
+  }
+
+  private async getSafeOsmosisBalancesRebalancerOutput(
+    token0: RegistryToken,
+    token1: RegistryToken
+  ): Promise<RebalancerOutput> {
     const newOsmosisBalances = await this.getOsmosisAccountBalances();
-    const newBalance0 =
-      newOsmosisBalances[token0.denom] ?? new TokenAmount(0, token0);
-    const newBalance1 =
-      newOsmosisBalances[token1.denom] ?? new TokenAmount(0, token1);
 
+    // Calculate available amounts
     return {
-      token0: newBalance0,
-      token1: newBalance1,
-      osmosisBalances: newOsmosisBalances,
+      token0: this.getSafeOsmosisBalanceForPosition(token0, newOsmosisBalances),
+      token1: this.getSafeOsmosisBalanceForPosition(token1, newOsmosisBalances),
     };
+  }
+
+  private getSafeOsmosisBalanceForPosition(
+    token: RegistryToken,
+    osmosisBalances: Record<string, TokenAmount>
+  ): TokenAmount {
+    const balance = osmosisBalances[token.denom] ?? new TokenAmount(0, token);
+
+    const osmosisFeeReserve =
+      token.denom === this.osmosisChainInfo.nativeToken.denom
+        ? BigNumber(OSMOSIS_CREATE_LP_POSITION_FEE).plus(
+            OSMOSIS_WITHDRAW_LP_POSITION_FEE
+          )
+        : BigNumber(0);
+
+    return new TokenAmount(
+      BigNumber.max(BigNumber(balance.amount).minus(osmosisFeeReserve), 0),
+      token
+    );
   }
 
   private async getArchwayAccountBalances(): Promise<
@@ -442,8 +858,7 @@ export class TokenRebalancer {
 
   private async findGasFeesOfTx(
     txHash: string,
-    chainInfo: ChainInfo,
-    tokensMap: Record<string, RegistryToken>
+    chainInfo: ChainInfo
   ): Promise<TokenAmount | undefined> {
     try {
       const response = await axios.get(
@@ -453,6 +868,11 @@ export class TokenRebalancer {
       const coin = response.data?.tx?.auth_info?.fee?.amount?.[0] as
         | Coin
         | undefined;
+
+      const tokensMap =
+        chainInfo.id === this.osmosisChainInfo.id
+          ? this.osmosisTokensMap
+          : this.archwayTokensMap;
 
       return coin ? parseCoinToTokenAmount(coin, tokensMap) : undefined;
     } catch {

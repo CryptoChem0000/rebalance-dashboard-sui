@@ -363,25 +363,67 @@ export class LiquidityManager {
       innerOsmosisBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     console.log(
-      `Current balances: ${balance0.humanReadableAmount} ${token0.name}, ${balance1.humanReadableAmount} ${token1.name}`
+      `Current balances on Osmosis: ${balance0.humanReadableAmount} ${token0.name}, ${balance1.humanReadableAmount} ${token1.name}`
     );
 
-    // Get current price and calculate tick range
+    // Get INITIAL price for rebalancing calculations
+    const initialPrice = await getPairPriceOnOsmosis(
+      token0,
+      token1,
+      this.environment
+    );
+
+    // Rebalance tokens if needed - now considers both chains
+    const rebalancedAmounts =
+      await this.tokenRebalancer.rebalanceTokensFor5050Deposit(
+        token0,
+        token1,
+        initialPrice,
+        innerOsmosisBalances // Pass current osmosis balances to avoid re-fetching
+      );
+
+    console.log(
+      `After rebalancing - available amounts: ${rebalancedAmounts.token0.humanReadableAmount} ${token0.name}, ${rebalancedAmounts.token1.humanReadableAmount} ${token1.name}`
+    );
+
+    // CRITICAL: Get the CURRENT price again after all rebalancing operations
     const currentPrice = await getPairPriceOnOsmosis(
       token0,
       token1,
       this.environment
     );
+
+    // Check if price has moved significantly
+    const priceDrift = BigNumber(currentPrice)
+      .minus(initialPrice)
+      .abs()
+      .div(initialPrice);
+
+    if (priceDrift.gt(0.01)) {
+      // More than 1% drift
+      console.log(
+        `Price has moved ${priceDrift
+          .times(100)
+          .toFixed(2)}% during rebalancing. ` +
+          `Initial: ${BigNumber(initialPrice)
+            .shiftedBy(token0.decimals - token1.decimals)
+            .toFixed(token1.decimals)}, Current: ${BigNumber(currentPrice)
+            .shiftedBy(token0.decimals - token1.decimals)
+            .toFixed(token1.decimals)}`
+      );
+    }
+
+    // Calculate tick range using the CURRENT price
     const bandPercentage = BigNumber(
       this.config.osmosisPosition.bandPercentage
     ).div(100);
 
-    const lowerPrice = BigNumber(currentPrice).times(
-      BigNumber(1).minus(bandPercentage)
-    );
-    const upperPrice = BigNumber(currentPrice).times(
-      BigNumber(1).plus(bandPercentage)
-    );
+    const lowerPrice = BigNumber(currentPrice)
+      .times(BigNumber(1).minus(bandPercentage))
+      .decimalPlaces(token0.decimals, BigNumber.ROUND_FLOOR);
+    const upperPrice = BigNumber(currentPrice)
+      .times(BigNumber(1).plus(bandPercentage))
+      .decimalPlaces(token0.decimals, BigNumber.ROUND_FLOOR);
 
     // Convert prices to ticks with proper rounding
     if (!this.isValidTickSpacing()) {
@@ -403,24 +445,23 @@ export class LiquidityManager {
     );
 
     console.log(
-      `Price range: ${lowerPrice.toFixed(6)} - ${upperPrice.toFixed(6)}`
+      `Price range: ${BigNumber(lowerPrice)
+        .shiftedBy(token0.decimals - token1.decimals)
+        .toFixed(token1.decimals)} - ${BigNumber(upperPrice)
+        .shiftedBy(token0.decimals - token1.decimals)
+        .toFixed(token1.decimals)} (based on current price: ${BigNumber(
+        currentPrice
+      )
+        .shiftedBy(token0.decimals - token1.decimals)
+        .toFixed(token1.decimals)})`
     );
     console.log(`Tick range: ${lowerTick} - ${upperTick}`);
-
-    // Rebalance tokens if needed
-    const rebalancedAmounts =
-      await this.tokenRebalancer.rebalanceTokensFor5050Deposit(
-        token0,
-        token1,
-        currentPrice,
-        osmosisBalances
-      );
 
     console.log(
       `Depositing: ${rebalancedAmounts.token0.humanReadableAmount} ${token0.name}, ${rebalancedAmounts.token1.humanReadableAmount} ${token1.name}`
     );
 
-    // Create position
+    // Create position with current ticks
     const result = await pool.createPosition({
       lowerTick,
       upperTick,
