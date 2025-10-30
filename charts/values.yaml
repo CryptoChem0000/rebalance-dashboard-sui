@@ -27,8 +27,8 @@ secrets:
       MNEMONIC: ""
       OSMOSIS_POOL_ID: ""
       REBALANCE_THRESHOLD_PERCENT: ""
-      OSMOSIS_POSITION_ID: ""
       OSMOSIS_POSITION_BAND_PERCENTAGE: ""
+      WATCH_FREQUENCY: ""
 
 healthCheck:
   initialDelaySeconds: 120

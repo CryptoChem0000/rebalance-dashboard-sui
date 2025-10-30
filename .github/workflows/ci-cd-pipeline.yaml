@@ -103,18 +103,16 @@ jobs:
           DEPLOYMENT_NAME: clamm-bot-1
           NAMESPACE: clamm-bots
           MNEMONIC: ${{ secrets.MNEMONIC }}
-          OSMOSIS_POOL_ID: ${{ secrets.OSMOSIS_POOL_ID }}
-          REBALANCE_THRESHOLD_PERCENT: ${{ secrets.REBALANCE_THRESHOLD_PERCENT }}
-          OSMOSIS_POSITION_ID: ${{ secrets.OSMOSIS_POSITION_ID }}
-          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ secrets.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
+          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
           WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY || '300' }}
         run: |
-          # Base64 encode secrets for Kubernetes
-          export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
-          export OSMOSIS_POOL_ID_B64=$(echo -n "$OSMOSIS_POOL_ID" | base64)
-          export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
-          export OSMOSIS_POSITION_ID_B64=$(echo -n "$OSMOSIS_POSITION_ID" | base64)
-          export OSMOSIS_POSITION_BAND_PERCENTAGE_B64=$(echo -n "$OSMOSIS_POSITION_BAND_PERCENTAGE" | base64)
+          export MNEMONIC=$(echo -n "$MNEMONIC" | base64)
+          export OSMOSIS_POOL_ID=$(echo -n "$OSMOSIS_POOL_ID" | base64)
+          export REBALANCE_THRESHOLD_PERCENT=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
+          export OSMOSIS_POSITION_BAND_PERCENTAGE=$(echo -n "$OSMOSIS_POSITION_BAND_PERCENTAGE" | base64)
+          export WATCH_FREQUENCY=$(echo -n "$WATCH_FREQUENCY" | base64)
 
           # Deploy using Helm
           helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
@@ -123,10 +121,10 @@ jobs:
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
             --set image.tag=$TAG \
             --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
-            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
-            --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID_B64" \
-            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
-            --set secrets.app-secrets.data.OSMOSIS_POSITION_ID="$OSMOSIS_POSITION_ID_B64" \
-            --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE_B64" \
+            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
+            --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
+            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
             --values ./charts/values.yaml \
             --wait --timeout 5m
