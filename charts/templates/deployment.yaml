@@ -84,7 +84,7 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /app/config
+              mountPath: /app/config.json
             - name: logs
               mountPath: /app/logs
             - name: database
