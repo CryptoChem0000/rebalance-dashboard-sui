@@ -1,7 +1,6 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
-import path from "path";
 
 import { OsmosisAccount, TokenAmount } from "../account-balances";
 import {
@@ -47,6 +46,7 @@ import {
   StatusResponse,
   WithdrawPositionResponse,
 } from "./types";
+import { loadConfigWithEnvOverrides } from "./config-loader";
 
 export class LiquidityManager {
   public config: Config;
@@ -60,7 +60,7 @@ export class LiquidityManager {
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
-  private database: SQLiteTransactionRepository;
+  public database: SQLiteTransactionRepository;
   private keyStore: AbstractKeyStore;
 
   constructor(params: LiquidityManagerConfig) {
@@ -100,10 +100,7 @@ export class LiquidityManager {
   static async make(
     params: MakeLiquidityManagerParams
   ): Promise<LiquidityManager> {
-    const workingDir = await getWorkingDirectory();
-    const configPath = path.join(workingDir, "config.json");
-    const configContent = await fs.readFile(configPath, "utf-8");
-    const config = JSON.parse(configContent) as Config;
+    const { config, configPath } = await loadConfigWithEnvOverrides();
     const keyStore = await KeyManager.create({
       type: KeyStoreType.ENV_VARIABLE,
     });
@@ -669,7 +666,7 @@ export class LiquidityManager {
   private async saveConfig(): Promise<void> {
     await fs.writeFile(
       this.configPath,
-      JSON.stringify(this.config, null, 2),
+      JSON.stringify(this.config, undefined, 2),
       "utf-8"
     );
   }

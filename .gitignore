@@ -55,5 +55,17 @@ temp/
 .temp/
 
 # CLI run logs and database
-/logs/
-/database/
+logs/*
+!logs/.gitkeep
+database/*
+!database/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Docker volume directories
+/docker-output/logs/*
+!/docker-output/logs/.gitkeep
+/docker-output/database/*
+!/docker-output/database/.gitkeep
+/docker-output/reports/*
+!/docker-output/reports/.gitkeep

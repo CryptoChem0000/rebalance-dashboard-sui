@@ -88,6 +88,10 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
    * ```
    */
   async getKey(name: string): Promise<string> {
+    if (process.env[name]) {
+      return process.env[name];
+    }
+
     const envVariables = await this.readEnvVariables();
     const mnemonic = envVariables[name];
     if (!mnemonic) {
@@ -256,6 +260,12 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
     const envVariables = await this.readEnvVariables();
     const keyNames: string[] = [];
 
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value && typeof value === "string" && value.split(" ").length >= 12) {
+        keyNames.push(key);
+      }
+    }
+
     for (const [key, value] of Object.entries(envVariables)) {
       // Basic check if value looks like a mnemonic (contains spaces and multiple words)
       if (value && typeof value === "string" && value.split(" ").length >= 12) {
@@ -263,7 +273,7 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
       }
     }
 
-    return keyNames;
+    return [...new Set(keyNames)];
   }
 
   /**

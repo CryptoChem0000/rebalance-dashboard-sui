@@ -1,0 +1,28 @@
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: external-lp-rebalance-with-bolt
+    restart: unless-stopped
+    stop_grace_period: 120s
+    environment:
+      # Your original env vars
+      - MNEMONIC=${MNEMONIC}
+
+      # Frequency in seconds when the position status will be checked and a rebalance may happen (default 300 seconds)
+      - WATCH_FREQUENCY=${WATCH_FREQUENCY:-300}
+      
+      # Config overrides
+      - OSMOSIS_POOL_ID=${OSMOSIS_POOL_ID}
+      - REBALANCE_THRESHOLD_PERCENT=${REBALANCE_THRESHOLD_PERCENT}
+      - OSMOSIS_POSITION_BAND_PERCENTAGE=${OSMOSIS_POSITION_BAND_PERCENTAGE}
+    volumes:
+      # Map container's logs folder to host's docker-output/logs folder
+      - ./docker-output/logs:/app/logs
+      # Map container's database folder to host's docker-output/database folder
+      - ./docker-output/database:/app/database
+      # Map container's database folder to host's docker-output/reports folder
+      - ./docker-output/reports:/app/reports
+      # Map config.json file to host's docker-config.json folder
+      - ./docker-config.json:/app/config.json
