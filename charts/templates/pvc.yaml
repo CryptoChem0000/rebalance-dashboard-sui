@@ -1,0 +1,43 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamm-bot.fullname" . }}-config
+  labels:
+    {{- include "clamm-bot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.config.size }}
+  storageClassName: {{ .Values.persistence.config.storageClass }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamm-bot.fullname" . }}-logs
+  labels:
+    {{- include "clamm-bot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.logs.size }}
+  storageClassName: {{ .Values.persistence.logs.storageClass }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamm-bot.fullname" . }}-database
+  labels:
+    {{- include "clamm-bot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.database.size }}
+  storageClassName: {{ .Values.persistence.database.storageClass }}
+  

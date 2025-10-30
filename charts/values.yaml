@@ -1,0 +1,56 @@
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - gh-registry-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+env:
+  NODE_ENV: "production"
+  IS_DOCKER_RUN: "true"
+  # WATCH_FREQUENCY will be set from GitHub Actions
+
+secrets:
+  app-secrets:
+    enabled: true
+    data:
+      # These will be set from GitHub Actions
+      MNEMONIC: ""
+      OSMOSIS_POOL_ID: ""
+      REBALANCE_THRESHOLD_PERCENT: ""
+      OSMOSIS_POSITION_ID: ""
+      OSMOSIS_POSITION_BAND_PERCENTAGE: ""
+
+healthCheck:
+  initialDelaySeconds: 120
+  periodSeconds: 60
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+persistence:
+  config:
+    size: 100Mi
+    storageClass: standard
+  logs:
+    size: 10Gi
+    storageClass: standard
+  database:
+    size: 5Gi
+    storageClass: standard
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi

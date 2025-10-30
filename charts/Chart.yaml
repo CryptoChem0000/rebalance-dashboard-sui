@@ -1,0 +1,5 @@
+apiVersion: v2
+name: clamm-bot
+description: A Helm chart for deploying the CLAMM bot (Osmosis liquidity manager)
+version: 0.1.0
+appVersion: "1.0.0"
