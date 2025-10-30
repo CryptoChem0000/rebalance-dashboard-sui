@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clamm-bot.fullname" . }}
+  labels:
+    {{- include "clamm-bot.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "clamm-bot.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clamm-bot.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "clamm-bot.serviceAccountName" . }}
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ .Values.command }}
+          args: ["run", "--watch", "$(WATCH_FREQUENCY)"]
+          envFrom:
+            {{- range $secretName, $secretData := .Values.secrets }}
+            {{- if $secretData.enabled }}
+            - secretRef:
+                name: {{ $secretName }}
+            {{- end }}
+            {{- end }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  # Calculate threshold based on watch frequency
+                  # Allow 2.5x the watch frequency for the last log update
+                  WATCH_FREQ=${WATCH_FREQUENCY:-300}
+                  THRESHOLD=$((WATCH_FREQ * 5 / 2))
+                  
+                  # Check if log file exists
+                  if [ ! -f /app/logs/bot.log ]; then
+                    echo "Log file not found"
+                    exit 1
+                  fi
+                  
+                  # Check last modification time
+                  LAST_MOD=$(stat -c %Y /app/logs/bot.log 2>/dev/null || stat -f %m /app/logs/bot.log 2>/dev/null)
+                  CURRENT_TIME=$(date +%s)
+                  TIME_DIFF=$((CURRENT_TIME - LAST_MOD))
+                  
+                  if [ $TIME_DIFF -gt $THRESHOLD ]; then
+                    echo "Log file not updated for $TIME_DIFF seconds (threshold: $THRESHOLD)"
+                    exit 1
+                  fi
+                  
+                  echo "Health check passed: log updated $TIME_DIFF seconds ago"
+                  exit 0
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -f /app/logs/bot.log"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: logs
+              mountPath: /app/logs
+            - name: database
+              mountPath: /app/database
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ include "clamm-bot.fullname" . }}-config
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "clamm-bot.fullname" . }}-logs
+        - name: database
+          persistentVolumeClaim:
+            claimName: {{ include "clamm-bot.fullname" . }}-database
