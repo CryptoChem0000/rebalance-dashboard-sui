@@ -7,7 +7,7 @@ imagePullSecrets:
   - gh-registry-secret
 
 nameOverride: ""
-fullnameOverride: ""
+fullnameOverride: "clammbot-prod"
 
 serviceAccount:
   create: true
