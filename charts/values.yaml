@@ -37,20 +37,41 @@ healthCheck:
   failureThreshold: 3
 
 persistence:
-  config:
-    size: 100Mi
-    storageClass: standard
-  logs:
-    size: 10Gi
-    storageClass: standard
   database:
     size: 5Gi
-    storageClass: standard
+    storageClass: standard-rwo
 
 resources:
   limits:
-    cpu: 1000m
-    memory: 1Gi
+    cpu: 400m
+    memory: 512Gi
   requests:
-    cpu: 500m
-    memory: 512Mi
+    cpu: 200m
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+
+config:
+  enabled: true
+  name: app-config
+  data:
+    config.json: |
+      {
+        "rebalanceThresholdPercent": 95,
+        "osmosisPool": {
+          "id": "1282",
+          "token0": "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
+          "token1": "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4",
+          "tickSpacing": 100,
+          "spreadFactor": 0.0005
+        },
+        "osmosisPosition": {
+          "id": "",
+          "bandPercentage": 1
+        }
+      }
+
+configMountPath: /app/config.json

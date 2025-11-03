@@ -96,13 +96,9 @@ jobs:
         with:
           version: "latest"
 
-      - name: Get tag name
-        id: get_tag
-        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
       - name: Deploy to GKE using Helm
         env:
-          TAG: ${{ steps.get_tag.outputs.TAG }}
+          TAG: ${{ github.sha }}
           DEPLOYMENT_NAME: clamm-bot-1
           NAMESPACE: bolt-prod
           MNEMONIC: ${{ secrets.MNEMONIC }}
@@ -124,5 +120,10 @@ jobs:
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
             --set image.tag=$TAG \
             --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
+            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.MNEMONIC="$MNEMONIC" \
+            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
+            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
             --values ./charts/values.yaml \
-            --wait --timeout 5m
+            --wait --timeout 2m

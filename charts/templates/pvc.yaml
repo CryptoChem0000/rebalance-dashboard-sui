@@ -1,43 +1,31 @@
----
+{{- if .Values.persistence }}
+{{- $root := . -}}
+{{- $names := keys .Values.persistence | sortAlpha -}}
+{{- range $i, $name := $names }}
+{{- $cfg := index $root.Values.persistence $name }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "clamm-bot.fullname" . }}-config
+  name: {{ include "clamm-bot.fullname" $root }}-{{ $name }}
   labels:
-    {{- include "clamm-bot.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "clamm-bot.name" $root }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: {{ $name }}
 spec:
   accessModes:
+{{- if $cfg.accessModes }}
+{{- range $m := $cfg.accessModes }}
+    - {{ $m }}
+{{- end }}
+{{- else }}
     - ReadWriteOnce
+{{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.config.size }}
-  storageClassName: {{ .Values.persistence.config.storageClass }}
+      storage: {{ required (printf "persistence.%s.size is required" $name) $cfg.size }}
+{{- with $cfg.storageClass }}
+  storageClassName: {{ . | quote }}
+{{- end }}
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "clamm-bot.fullname" . }}-logs
-  labels:
-    {{- include "clamm-bot.labels" . | nindent 4 }}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.persistence.logs.size }}
-  storageClassName: {{ .Values.persistence.logs.storageClass }}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "clamm-bot.fullname" . }}-database
-  labels:
-    {{- include "clamm-bot.labels" . | nindent 4 }}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.persistence.database.size }}
-  storageClassName: {{ .Values.persistence.database.storageClass }}
-  
+{{- end }}
+{{- end }}
