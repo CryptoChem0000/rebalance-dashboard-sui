@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - "feat/add-ci-cd"
+
   workflow_dispatch:
 
 env:
@@ -101,7 +104,7 @@ jobs:
         env:
           TAG: ${{ steps.get_tag.outputs.TAG }}
           DEPLOYMENT_NAME: clamm-bot-1
-          NAMESPACE: clamm-bots
+          NAMESPACE: bolt-prod
           MNEMONIC: ${{ secrets.MNEMONIC }}
           OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
           REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
