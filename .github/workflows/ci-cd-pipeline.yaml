@@ -124,10 +124,10 @@ jobs:
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
             --set image.tag=$TAG \
             --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
-            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
-            --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
-            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
-            --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
-            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
+            # --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
+            # --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            # --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            # --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
+            # --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
             --values ./charts/values.yaml \
             --wait --timeout 5m
