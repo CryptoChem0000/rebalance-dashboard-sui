@@ -25,8 +25,12 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.command }}
           command: {{ .Values.command }}
+          {{- end }}
+          {{- if .Values.args }}
           args: ["run", "--watch", "$(WATCH_FREQUENCY)"]
+          {{- end }}
           envFrom:
             {{- range $secretName, $secretData := .Values.secrets }}
             {{- if $secretData.enabled }}
@@ -39,63 +43,72 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+
+          {{- /* ---- Liveness ---- */}}
+          {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  # Calculate threshold based on watch frequency
-                  # Allow 2.5x the watch frequency for the last log update
-                  WATCH_FREQ=${WATCH_FREQUENCY:-300}
-                  THRESHOLD=$((WATCH_FREQ * 5 / 2))
+            {{- if eq .Values.livenessProbe.type "http" }}
+            httpGet: {{- toYaml .Values.livenessProbe.httpGet | nindent 14 }}
+            {{- else if eq .Values.livenessProbe.type "tcp" }}
+            tcpSocket: {{- toYaml .Values.livenessProbe.tcpSocket | nindent 14 }}
+            {{- else if eq .Values.livenessProbe.type "exec" }}
+            exec: {{- toYaml .Values.livenessProbe.exec | nindent 14 }}
+            {{- end }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+          {{- end }}
 
-                  # Check if log file exists
-                  if [ ! -f /app/logs/bot.log ]; then
-                    echo "Log file not found"
-                    exit 1
-                  fi
-
-                  # Check last modification time
-                  LAST_MOD=$(stat -c %Y /app/logs/bot.log 2>/dev/null || stat -f %m /app/logs/bot.log 2>/dev/null)
-                  CURRENT_TIME=$(date +%s)
-                  TIME_DIFF=$((CURRENT_TIME - LAST_MOD))
-
-                  if [ $TIME_DIFF -gt $THRESHOLD ]; then
-                    echo "Log file not updated for $TIME_DIFF seconds (threshold: $THRESHOLD)"
-                    exit 1
-                  fi
-
-                  echo "Health check passed: log updated $TIME_DIFF seconds ago"
-                  exit 0
-            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
-            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          {{- /* ---- Readiness ---- */}}
+          {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - "test -f /app/logs/bot.log"
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            {{- if eq .Values.readinessProbe.type "http" }}
+            httpGet: {{- toYaml .Values.readinessProbe.httpGet | nindent 14 }}
+            {{- else if eq .Values.readinessProbe.type "tcp" }}
+            tcpSocket: {{- toYaml .Values.readinessProbe.tcpSocket | nindent 14 }}
+            {{- else if eq .Values.readinessProbe.type "exec" }}
+            exec: {{- toYaml .Values.readinessProbe.exec | nindent 14 }}
+            {{- end }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: config
-              mountPath: /app/config.json
-            - name: logs
-              mountPath: /app/logs
-            - name: database
-              mountPath: /app/database
+              {{- $root := . -}}
+              {{- if .Values.persistence }}
+              {{- $names := keys .Values.persistence | sortAlpha -}}
+              {{- range $name := $names }}
+              {{- $cfg := index $root.Values.persistence $name }}
+              - name: {{ $name }}
+                mountPath: {{ default (printf "/data/%s" $name) $cfg.mountPath }}
+              {{- end }}
+              {{- end }}
+              - name: config-volume
+                mountPath: {{ .Values.configMountPath }}
+                readOnly: true
+                subPath: config.json
       volumes:
-        - name: config
+        {{- $root := . -}}
+        {{- if .Values.persistence }}
+        {{- $names := keys .Values.persistence | sortAlpha -}}
+        {{- range $name := $names }}
+        - name: {{ $name }}
           persistentVolumeClaim:
-            claimName: {{ include "clamm-bot.fullname" . }}-config
-        - name: logs
-          persistentVolumeClaim:
-            claimName: {{ include "clamm-bot.fullname" . }}-logs
-        - name: database
-          persistentVolumeClaim:
-            claimName: {{ include "clamm-bot.fullname" . }}-database
+            claimName: {{ include "clamm-bot.fullname" $root }}-{{ $name }}
+        {{- end }}
+        {{- end }}
+        - name: config-volume
+          configMap:
+            name: {{ include "clamm-bot.fullname" . }}-config
+            items:
+              - key: config.json
+                path: config.json
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
