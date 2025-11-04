@@ -192,13 +192,7 @@ export class OsmosisCLPool {
         }
       );
 
-    const fees = await simulateFees(
-      this.signingClient,
-      sender,
-      [msg],
-      memo,
-      "high"
-    );
+    const fees = await simulateFees(this.signingClient, sender, [msg], memo);
 
     const response = await this.signingClient.signAndBroadcast(
       sender,
