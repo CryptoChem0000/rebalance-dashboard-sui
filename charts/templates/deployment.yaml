@@ -21,6 +21,20 @@ spec:
         - name: {{ . }}
         {{- end }}
       {{- end }}
+      # --- Copy the config file into the writable volume before running the app ---
+      initContainers:
+        - name: copy-config
+          image: alpine:3.20
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /pvc/database /pvc/reports /pvc/docker-files/config
+              chown -R 1001:1001 /pvc
+          volumeMounts:
+            - name: data
+              mountPath: /pvc
+
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -29,7 +43,7 @@ spec:
           command: {{ .Values.command }}
           {{- end }}
           {{- if .Values.args }}
-          args: ["run", "--watch", "$(WATCH_FREQUENCY)"]
+          args: {{ .Values.args }}
           {{- end }}
           envFrom:
             {{- range $secretName, $secretData := .Values.secrets }}
@@ -80,19 +94,30 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-              {{- $root := . -}}
-              {{- if .Values.persistence }}
-              {{- $names := keys .Values.persistence | sortAlpha -}}
-              {{- range $name := $names }}
-              {{- $cfg := index $root.Values.persistence $name }}
-              - name: {{ $name }}
-                mountPath: {{ default (printf "/data/%s" $name) $cfg.mountPath }}
-              {{- end }}
-              {{- end }}
-              - name: config-volume
-                mountPath: {{ .Values.configMountPath }}
-                readOnly: true
-                subPath: config.json
+              # {{- $root := . -}}
+              # {{- if .Values.persistence }}
+              # {{- $names := keys .Values.persistence | sortAlpha -}}
+              # {{- range $name := $names }}
+              # {{- $cfg := index $root.Values.persistence $name }}
+              # - name: {{ $name }}
+              #   mountPath: {{ default (printf "/data/%s" $name) $cfg.mountPath }}
+              # {{- end }}
+              # {{- end }}
+              # - name: config-volume
+              #   mountPath: {{ .Values.configMountPath }}
+              #   readOnly: false
+              #   subPath: config.json
+
+              # mount some subdirs from the same PVC
+              - name: data
+                mountPath: /app/database
+                subPath: database
+              - name: data
+                mountPath: /app/reports
+                subPath: reports
+              - name: data
+                mountPath: /app/docker-files/config
+                subPath: docker-files/config
       volumes:
         {{- $root := . -}}
         {{- if .Values.persistence }}
@@ -103,12 +128,7 @@ spec:
             claimName: {{ include "clamm-bot.fullname" $root }}-{{ $name }}
         {{- end }}
         {{- end }}
-        - name: config-volume
-          configMap:
-            name: {{ include "clamm-bot.fullname" . }}-config
-            items:
-              - key: config.json
-                path: config.json
+
       {{- with .Values.affinity }}
       affinity: {{- toYaml . | nindent 8 }}
       {{- end }}

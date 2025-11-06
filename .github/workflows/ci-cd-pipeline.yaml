@@ -119,12 +119,12 @@ jobs:
             --namespace $NAMESPACE \
             --create-namespace \
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
-            --set image.tag=${COMMIT_HASH:0:7} \
+            --set image.tag=sha-${COMMIT_HASH:0:7} \
             --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
-            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.MNEMONIC="$MNEMONIC" \
-            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
-            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
-            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
-            --set secrets.$DEPLOYMENT_NAME-app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
+            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
+            --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
+            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
             --values ./charts/values.yaml \
             --wait --timeout 2m
