@@ -26,6 +26,7 @@ export type Config = {
 
 export type MakeLiquidityManagerParams = {
   environment?: "mainnet" | "testnet";
+  configFilePath?: string;
   rpcEndpointsOverride?: Record<string, string>;
   restEndpointsOverride?: Record<string, string>;
 };

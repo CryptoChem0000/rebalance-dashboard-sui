@@ -63,9 +63,9 @@ reports/*
 !reports/.gitkeep
 
 # Docker volume directories
-/docker-output/logs/*
-!/docker-output/logs/.gitkeep
-/docker-output/database/*
-!/docker-output/database/.gitkeep
-/docker-output/reports/*
-!/docker-output/reports/.gitkeep
+/docker-files/logs/*
+!/docker-files/logs/.gitkeep
+/docker-files/database/*
+!/docker-files/database/.gitkeep
+/docker-files/reports/*
+!/docker-files/reports/.gitkeep

@@ -1,4 +1,3 @@
-import { FEE_VALUES } from "@osmonauts/utils";
 import { BigNumber } from "bignumber.js";
 import { EncodeObject } from "osmojs";
 
@@ -14,10 +13,21 @@ export const simulateFees = async (
   fees: "low" | "medium" | "high" = "medium",
   gasMultiplier: number = DEFAULT_GAS_MULTIPLIER
 ) => {
+  const CUSTOM_FEE_VALUES = {
+    osmosis: {
+      low: "30000",
+      medium: "100000",
+      high: "160000",
+    },
+  };
   const gasEstimated = await signingClient.simulate(sender, messages, memo);
 
   return {
-    amount: [{ denom: NATIVE_TOKEN_DENOM, amount: FEE_VALUES.osmosis[fees] }],
-    gas: BigNumber(gasEstimated).times(gasMultiplier).toFixed(0, BigNumber.ROUND_CEIL),
+    amount: [
+      { denom: NATIVE_TOKEN_DENOM, amount: CUSTOM_FEE_VALUES.osmosis[fees] },
+    ],
+    gas: BigNumber(gasEstimated)
+      .times(gasMultiplier)
+      .toFixed(0, BigNumber.ROUND_CEIL),
   };
 };

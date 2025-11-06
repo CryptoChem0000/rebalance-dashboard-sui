@@ -8,11 +8,12 @@ import { getWorkingDirectory } from "../utils";
 import type { Config } from "./types";
 
 export const loadConfigWithEnvOverrides = async (
+  configFilePath?: string,
   envFilePath?: string
 ): Promise<{ config: Config; configPath: string }> => {
   // Get config path
   const workingDir = await getWorkingDirectory();
-  const configPath = path.join(workingDir, "config.json");
+  const configPath = configFilePath ?? path.join(workingDir, "config.json");
 
   // Load default config
   const configContent = await fs.readFile(configPath, "utf-8");
@@ -23,11 +24,13 @@ export const loadConfigWithEnvOverrides = async (
 
   // First, try to load from .env file if it exists
   const envPath = envFilePath || path.join(workingDir, ".env");
+  console.log(11111, envPath)
   if (existsSync(envPath)) {
+  console.log(2222, 'exists')
     const envContent = await fs.readFile(envPath, "utf-8");
     envVars = dotenv.parse(envContent);
   }
-
+console.log(3333, process.env)
   // Process.env takes precedence over .env file
   const finalEnvVars = { ...envVars, ...process.env };
 
