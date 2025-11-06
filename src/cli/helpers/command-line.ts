@@ -1,0 +1,99 @@
+import { DatabaseQueryClient } from "../../database";
+import { simpleGracefulShutdown } from "./graceful-shutdown";
+import { Logger } from "./logger";
+
+export function withErrorHandling(fn: Function) {
+  return async (...args: any[]) => {
+    try {
+      await fn(...args);
+    } catch (error: any) {
+      console.error("\n❌ Error:", error?.message);
+      console.error(error);
+      process.exit(1);
+    }
+  };
+}
+
+export async function withLogger(
+  options: any,
+  callback: (logger: Logger) => Promise<void>
+) {
+  const logger = new Logger(options.logFile);
+
+  try {
+    if (!!options.log) {
+      await logger.initialize();
+      console.log(`📝 Logging to: ${logger.getLogPath()}`);
+    }
+
+    await callback(logger);
+  } finally {
+    logger.close();
+  }
+}
+
+export function withDatabase(
+  options: any,
+  callback: (db: DatabaseQueryClient) => Promise<void>
+) {
+  return simpleGracefulShutdown(async () => {
+    let dbQueryClient: DatabaseQueryClient | undefined;
+
+    try {
+      dbQueryClient = await DatabaseQueryClient.make({
+        environment: options.environment,
+      });
+
+      await callback(dbQueryClient);
+    } finally {
+      dbQueryClient?.close();
+    }
+  });
+}
+
+export function formatDateRange(startDate?: Date, endDate?: Date) {
+  if (startDate || endDate) {
+    console.log(
+      `📅 Date range: ${
+        startDate ? startDate.toLocaleDateString() : "All"
+      } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
+    );
+  }
+}
+
+export function displayTransactionDetails(tx: any, index: number) {
+  console.log(
+    `${index + 1}. ${new Date((tx.timestamp || 0) * 1000).toLocaleString()}`
+  );
+  console.log(`   Type: ${tx.transactionType}`);
+  console.log(`   Chain: ${tx.chainId}`);
+  console.log(`   Hash: ${tx.txHash}`);
+  console.log(`   Status: ${tx.successful ? "✅ Success" : "❌ Failed"}`);
+
+  if (tx.inputTokenName && tx.inputAmount) {
+    console.log(`   Input: ${tx.inputAmount} ${tx.inputTokenName}`);
+  }
+  if (tx.secondInputTokenName && tx.secondInputAmount) {
+    console.log(
+      `   Second Input: ${tx.secondInputAmount} ${tx.secondInputTokenName}`
+    );
+  }
+  if (tx.outputTokenName && tx.outputAmount) {
+    console.log(`   Output: ${tx.outputAmount} ${tx.outputTokenName}`);
+  }
+  if (tx.secondOutputTokenName && tx.secondOutputAmount) {
+    console.log(
+      `   Second Output: ${tx.secondOutputAmount} ${tx.secondOutputTokenName}`
+    );
+  }
+  if (tx.gasFeeAmount && tx.gasFeeTokenName) {
+    console.log(`   Gas: ${tx.gasFeeAmount} ${tx.gasFeeTokenName}`);
+  }
+  if (tx.destinationAddress) {
+    console.log(`   Destination: ${tx.destinationAddress}`);
+  }
+  if (!tx.successful && tx.error) {
+    console.log(`   Error: ${tx.error}`);
+  }
+  console.log();
+}

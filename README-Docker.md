@@ -8,10 +8,11 @@ Create a `.env` file in the project folder:
 MNEMONIC="your twelve or twenty four word secret phrase"
 
 # Optional - defaults shown
-WATCH_FREQUENCY=300                    # Check interval in seconds
-OSMOSIS_POOL_ID=1282                  # Pool ID from app.osmosis.zone/pools
-REBALANCE_THRESHOLD_PERCENT=95        # Rebalance at 95% out of range
-OSMOSIS_POSITION_BAND_PERCENTAGE=1    # ±1% from current price
+WATCH_FREQUENCY=300                           # Check interval in seconds
+OSMOSIS_POOL_ID=1282                          # Pool ID from app.osmosis.zone/pools
+REBALANCE_THRESHOLD_PERCENT=95                # Rebalance at 95% out of range
+OSMOSIS_POSITION_BAND_PERCENTAGE=1            # ±1% from current price
+CONFIG_FILE=./docker-files/config/config.json # Config file to read and write from (relative to project's root path)
 ```
 
 Then run:
@@ -33,10 +34,10 @@ docker run -d \
   -e OSMOSIS_POOL_ID=1282 \
   -e REBALANCE_THRESHOLD_PERCENT=95 \
   -e OSMOSIS_POSITION_BAND_PERCENTAGE=1 \
-  -v $(pwd)/docker-output/logs:/app/logs \
-  -v $(pwd)/docker-output/database:/app/database \
-  -v $(pwd)/docker-output/reports:/app/reports \
-  -v $(pwd)/docker-config.json:/app/config.json \
+  -v $(pwd)/docker-files/logs:/app/logs \
+  -v $(pwd)/docker-files/database:/app/database \
+  -v $(pwd)/docker-files/reports:/app/reports \
+  -v $(pwd)/docker-files/config:/app/docker-files/config \
   lp-rebalancer
 ```
 
@@ -69,22 +70,14 @@ Create a `.env` file in the project folder:
 MNEMONIC="your twelve or twenty four word secret phrase"
 
 # Optional - defaults shown
-WATCH_FREQUENCY=300                    # Check interval in seconds
-OSMOSIS_POOL_ID=1282                  # Pool ID from app.osmosis.zone/pools
-REBALANCE_THRESHOLD_PERCENT=95        # Rebalance at 95% out of range
-OSMOSIS_POSITION_BAND_PERCENTAGE=1    # ±1% from current price
+WATCH_FREQUENCY=300                           # Check interval in seconds
+OSMOSIS_POOL_ID=1282                          # Pool ID from app.osmosis.zone/pools
+REBALANCE_THRESHOLD_PERCENT=95                # Rebalance at 95% out of range
+OSMOSIS_POSITION_BAND_PERCENTAGE=1            # ±1% from current price
+CONFIG_FILE=./docker-files/config/config.json # Config file to read and write from
 ```
 
-### 2. Create Docker Config File
-
-Copy the example config to Docker-specific config:
-```bash
-cp config.json docker-config.json
-```
-
-This keeps your Docker config separate from local development.
-
-### 3. Start the Service
+### 2. Start the Service
 ```bash
 # Start in watch mode (checks every 5 minutes by default)
 docker compose up -d
@@ -99,13 +92,13 @@ docker compose stop
 docker compose down
 ```
 
-### 4. Access Your Data
+### 3. Access Your Data
 
-Docker stores data in `docker-output/` to prevent conflicts:
-- **Logs**: `./docker-output/logs/`
-- **Database**: `./docker-output/database/`
-- **Reports**: `./docker-output/reports/`
-- **Config**: `./docker-config.json`
+Docker stores data in `docker-files/` to prevent conflicts:
+- **Logs**: `./docker-files/logs/`
+- **Database**: `./docker-files/database/`
+- **Reports**: `./docker-files/reports/`
+- **Config**: `./docker-files/config/`
 
 ## 🔧 Using Plain Docker (Alternative Method)
 
@@ -121,19 +114,19 @@ docker build -t lp-rebalancer .
 # Check status
 docker run --rm \
   -e MNEMONIC="your mnemonic phrase" \
-  -v $(pwd)/docker-output/logs:/app/logs \
-  -v $(pwd)/docker-output/database:/app/database \
-  -v $(pwd)/docker-output/reports:/app/reports \
-  -v $(pwd)/docker-config.json:/app/config.json \
+  -v $(pwd)/docker-files/logs:/app/logs \
+  -v $(pwd)/docker-files/database:/app/database \
+  -v $(pwd)/docker-files/reports:/app/reports \
+  -v $(pwd)/docker-files/config:/app/docker-files/config \
   lp-rebalancer npm run status
 
 # Run once (create/rebalance)
 docker run --rm \
   -e MNEMONIC="your mnemonic phrase" \
-  -v $(pwd)/docker-output/logs:/app/logs \
-  -v $(pwd)/docker-output/database:/app/database \
-  -v $(pwd)/docker-output/reports:/app/reports \
-  -v $(pwd)/docker-config.json:/app/config.json \
+  -v $(pwd)/docker-files/logs:/app/logs \
+  -v $(pwd)/docker-files/database:/app/database \
+  -v $(pwd)/docker-files/reports:/app/reports \
+  -v $(pwd)/docker-files/config:/app/docker-files/config \
   lp-rebalancer npm start
 
 # Run in watch mode (continuous monitoring)
@@ -141,10 +134,10 @@ docker run -d \
   --name lp-rebalancer \
   -e MNEMONIC="your mnemonic phrase" \
   -e WATCH_FREQUENCY=600 \
-  -v $(pwd)/docker-output/logs:/app/logs \
-  -v $(pwd)/docker-output/database:/app/database \
-  -v $(pwd)/docker-output/reports:/app/reports \
-  -v $(pwd)/docker-config.json:/app/config.json \
+  -v $(pwd)/docker-files/logs:/app/logs \
+  -v $(pwd)/docker-files/database:/app/database \
+  -v $(pwd)/docker-files/reports:/app/reports \
+  -v $(pwd)/docker-files/config:/app/docker-files/config \
   lp-rebalancer
 
 # View logs of running container
@@ -160,10 +153,10 @@ docker rm lp-rebalancer
 Replace `$(pwd)` with `%cd%` in Command Prompt or `${PWD}` in PowerShell:
 ```cmd
 # Command Prompt
-docker run --rm -e MNEMONIC="your mnemonic" -v %cd%/docker-output/logs:/app/logs -v %cd%/docker-output/database:/app/database -v %cd%/docker-output/reports:/app/reports -v %cd%/docker-config.json:/app/config.json lp-rebalancer npm run status
+docker run --rm -e MNEMONIC="your mnemonic" -v %cd%/docker-files/logs:/app/logs -v %cd%/docker-files/database:/app/database -v %cd%/docker-files/reports:/app/reports -v %cd%/docker-files/config:/app/docker-files/config lp-rebalancer npm run status
 
 # PowerShell
-docker run --rm -e MNEMONIC="your mnemonic" -v ${PWD}/docker-output/logs:/app/logs -v ${PWD}/docker-output/database:/app/database -v ${PWD}/docker-output/reports:/app/reports -v ${PWD}/docker-config.json:/app/config.json lp-rebalancer npm run status
+docker run --rm -e MNEMONIC="your mnemonic" -v ${PWD}/docker-files/logs:/app/logs -v ${PWD}/docker-files/database:/app/database -v ${PWD}/docker-files/reports:/app/reports -v ${PWD}/docker-files/config:/app/docker-files/config lp-rebalancer npm run status
 ```
 
 ## 📊 Managing Your Position
@@ -192,7 +185,7 @@ docker compose exec app npm run profit
 docker compose exec app npm run report -- --csv
 ```
 
-CSV files are saved to `docker-output/reports/`.
+CSV files are saved to `/docker-files/reports/`.
 
 ### Withdraw Position
 ```bash
@@ -255,14 +248,14 @@ The tool will automatically fetch pool parameters when it starts.
 
 ## 📁 Data Persistence
 
-Docker uses the `docker-output/` directory structure:
+Docker uses the `docker-files/` directory structure:
 
 | Data Type | Container Path | Host Path |
 |-----------|---------------|-----------|
-| Logs | `/app/logs` | `./docker-output/logs/` |
-| Database | `/app/database` | `./docker-output/database/` |
-| Reports | `/app/reports` | `./docker-output/reports/` |
-| Config | `/app/config.json` | `./docker-config.json` |
+| Logs | `/app/logs` | `./docker-files/logs/` |
+| Database | `/app/database` | `./docker-files/database/` |
+| Reports | `/app/reports` | `./docker-files/reports/` |
+| Config | `/app/config` | `./docker-files/config/` |
 
 These directories persist between container restarts.
 
@@ -284,8 +277,8 @@ Common issues:
 
 Ensure directories exist and have correct permissions:
 ```bash
-mkdir -p docker-output/logs docker-output/database docker-output/reports
-chmod 755 docker-output/*
+mkdir -p docker-files/logs docker-files/database docker-files/reports
+chmod 755 docker-files/*
 ```
 
 ### Memory Issues
@@ -376,22 +369,10 @@ docker compose kill
 ### Backup Data
 ```bash
 # Create backup
-tar -czf backup-$(date +%Y%m%d).tar.gz docker-output docker-config.json
+tar -czf backup-$(date +%Y%m%d).tar.gz docker-files
 
 # Restore backup
 tar -xzf backup-20240115.tar.gz
-```
-
-### Reset Everything
-```bash
-# Stop and remove container
-docker compose down
-
-# Remove data (CAUTION: This deletes your position tracking!)
-rm -rf docker-output
-
-# Start fresh
-docker compose up -d
 ```
 
 ## 💡 Tips
