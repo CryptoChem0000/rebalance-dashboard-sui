@@ -34,7 +34,6 @@ import { TokenRebalancer } from "./token-rebalancer";
 import {
   assertEnoughBalanceForFees,
   getSignerAddress,
-  getWorkingDirectory,
 } from "../utils";
 
 import {
@@ -100,7 +99,7 @@ export class LiquidityManager {
   static async make(
     params: MakeLiquidityManagerParams
   ): Promise<LiquidityManager> {
-    const { config, configPath } = await loadConfigWithEnvOverrides();
+    const { config, configPath } = await loadConfigWithEnvOverrides(params.configFilePath);
     const keyStore = await KeyManager.create({
       type: KeyStoreType.ENV_VARIABLE,
     });

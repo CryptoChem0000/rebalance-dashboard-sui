@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "path";
 import { createWriteStream, WriteStream } from "node:fs";
 
-import { getWorkingDirectory } from "../utils";
+import { getWorkingDirectory } from "../../utils";
 
 export class Logger {
   private logStream?: WriteStream;

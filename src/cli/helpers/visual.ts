@@ -1,4 +1,4 @@
-import { parseDateString } from "./parsers";
+import { parseDateString } from "../../utils/parsers";
 
 export const createRangeVisual = (
   percentage: number,

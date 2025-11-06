@@ -22,14 +22,14 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "cli": "tsx src/cli.ts",
-    "start": "tsx src/cli.ts run",
-    "status": "tsx src/cli.ts status",
-    "withdraw": "tsx src/cli.ts withdraw",
-    "report": "tsx src/cli.ts report",
-    "volume": "tsx src/cli.ts volume",
-    "profit": "tsx src/cli.ts profit",
-    "stats": "tsx src/cli.ts stats"
+    "cli": "tsx src/cli/index.ts",
+    "start": "tsx src/cli/index.ts run",
+    "status": "tsx src/cli/index.ts status",
+    "withdraw": "tsx src/cli/index.ts withdraw",
+    "report": "tsx src/cli/index.ts report",
+    "volume": "tsx src/cli/index.ts volume",
+    "profit": "tsx src/cli/index.ts profit",
+    "stats": "tsx src/cli/index.ts stats"
   },
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
@@ -40,7 +40,7 @@
     "@cosmjs/stargate": "^0.36.0",
     "@injectivelabs/sdk-ts": "^1.16.22",
     "@osmonauts/utils": "^1.18.0",
-    "@skip-go/client": "1.5.6",
+    "@skip-go/client": "^1.5.9",
     "axios": "^1.11.0",
     "better-sqlite3": "^12.4.1",
     "bignumber.js": "^9.3.1",

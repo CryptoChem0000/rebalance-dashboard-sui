@@ -17,12 +17,15 @@ services:
       - OSMOSIS_POOL_ID=${OSMOSIS_POOL_ID}
       - REBALANCE_THRESHOLD_PERCENT=${REBALANCE_THRESHOLD_PERCENT}
       - OSMOSIS_POSITION_BAND_PERCENTAGE=${OSMOSIS_POSITION_BAND_PERCENTAGE}
+      
+      # Config file path (default: ./docker-files/config/config.json)
+      - CONFIG_FILE=${CONFIG_FILE:-./docker-files/config/config.json}
     volumes:
-      # Map container's logs folder to host's docker-output/logs folder
-      - ./docker-output/logs:/app/logs
-      # Map container's database folder to host's docker-output/database folder
-      - ./docker-output/database:/app/database
-      # Map container's database folder to host's docker-output/reports folder
-      - ./docker-output/reports:/app/reports
-      # Map config.json file to host's docker-config.json folder
-      - ./docker-config.json:/app/config.json
+      # Map container's logs folder to host's docker-files/logs folder
+      - ./docker-files/logs:/app/logs
+      # Map container's database folder to host's docker-files/database folder
+      - ./docker-files/database:/app/database
+      # Map container's reports folder to host's docker-files/reports folder
+      - ./docker-files/reports:/app/reports
+      # Map container's docker-files/config folder to host's docker-files/config folder
+      - ./docker-files/config:/app/docker-files/config

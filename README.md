@@ -174,6 +174,14 @@ Add `-- --csv` to any report command to export to CSV files in the `reports/` fo
 
 Add `-- --log-file mylog.log` to any command to use a specific log file name.
 
+### Disable writing to log files
+
+Add `-- --no-log` to any command so no log files are written.
+
+### Change config file location
+
+Add `-- --config-file myconfig.json` to use another file instead of `config.json`.
+
 ## 🎮 Example Workflows
 
 ### First Time Setup
@@ -307,16 +315,6 @@ Reports can be exported to the `reports/` folder:
 - Check the log files for detailed errors
 - Ensure sufficient gas on both chains
 - Try running the command again
-
-### Checking Logs
-
-```bash
-# On Mac/Linux
-tail -f logs/liquidity-manager-*.log
-
-# On Windows
-type logs\liquidity-manager-*.log
-```
 
 ## 🛡️ Security Best Practices
 
