@@ -120,7 +120,6 @@ jobs:
             --create-namespace \
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
             --set image.tag=sha-${COMMIT_HASH:0:7} \
-            --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
             --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
             --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
             --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
