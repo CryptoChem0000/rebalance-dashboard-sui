@@ -1,0 +1,31 @@
+{{- if .Values.persistence }}
+{{- $root := . -}}
+{{- $names := keys .Values.persistence | sortAlpha -}}
+{{- range $i, $name := $names }}
+{{- $cfg := index $root.Values.persistence $name }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamm-bot.fullname" $root }}-{{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "clamm-bot.name" $root }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  accessModes:
+{{- if $cfg.accessModes }}
+{{- range $m := $cfg.accessModes }}
+    - {{ $m }}
+{{- end }}
+{{- else }}
+    - ReadWriteOnce
+{{- end }}
+  resources:
+    requests:
+      storage: {{ required (printf "persistence.%s.size is required" $name) $cfg.size }}
+{{- with $cfg.storageClass }}
+  storageClassName: {{ . | quote }}
+{{- end }}
+---
+{{- end }}
+{{- end }}

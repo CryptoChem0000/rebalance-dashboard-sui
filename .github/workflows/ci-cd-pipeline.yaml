@@ -1,0 +1,130 @@
+name: Deploy CLAMM Bot
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - "feat/add-ci-cd"
+
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: shared-gke-nonprod
+  GKE_REGION: us-central1
+  HELM_CHART_PATH: ./charts
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=tag
+
+      # Setup Docker build for cross-platform builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: clamm-bot-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup gcloud CLI
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      # Get GKE credentials
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+
+      # Install Helm
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "latest"
+
+      - name: Deploy to GKE using Helm
+        env:
+          TAG: ${{ github.sha }}
+          COMMIT_HASH: ${{ github.sha }}
+          DEPLOYMENT_NAME: clamm-bot-1
+          NAMESPACE: bolt-prod
+          MNEMONIC: ${{ secrets.MNEMONIC }}
+          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
+          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+          WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY || '300' }}
+        run: |
+          export MNEMONIC=$(echo -n "$MNEMONIC" | base64)
+          export OSMOSIS_POOL_ID=$(echo -n "$OSMOSIS_POOL_ID" | base64)
+          export REBALANCE_THRESHOLD_PERCENT=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
+          export OSMOSIS_POSITION_BAND_PERCENTAGE=$(echo -n "$OSMOSIS_POSITION_BAND_PERCENTAGE" | base64)
+          export WATCH_FREQUENCY=$(echo -n "$WATCH_FREQUENCY" | base64)
+
+          # Deploy using Helm
+          helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
+            --namespace $NAMESPACE \
+            --create-namespace \
+            --set image.repository=${REGISTRY}/${IMAGE_NAME} \
+            --set image.tag=sha-${COMMIT_HASH:0:7} \
+            --set env.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
+            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC" \
+            --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE" \
+            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY" \
+            --values ./charts/values.yaml \
+            --wait --timeout 2m

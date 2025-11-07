@@ -1,0 +1,58 @@
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - gh-registry-secret
+
+nameOverride: ""
+fullnameOverride: "clammbot-prod"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+env:
+  NODE_ENV: "production"
+  IS_DOCKER_RUN: "true"
+  # WATCH_FREQUENCY will be set from GitHub Actions
+
+secrets:
+  app-secrets:
+    enabled: true
+    data:
+      # These will be set from GitHub Actions
+      MNEMONIC: ""
+      OSMOSIS_POOL_ID: ""
+      REBALANCE_THRESHOLD_PERCENT: ""
+      OSMOSIS_POSITION_BAND_PERCENTAGE: ""
+      WATCH_FREQUENCY: ""
+
+healthCheck:
+  initialDelaySeconds: 120
+  periodSeconds: 60
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+persistence:
+  data:
+    size: 5Gi
+    storageClass: standard-rwo
+
+resources:
+  limits:
+    cpu: 400m
+    memory: 512Gi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+
+config:
+  enabled: true
