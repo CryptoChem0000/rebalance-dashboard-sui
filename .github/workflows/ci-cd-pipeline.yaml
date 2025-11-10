@@ -231,7 +231,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v3
         with:
-          version: "latest"
+          version: "3.19.0"
 
       - name: Read bot configuration from JSON
         id: bot-config
