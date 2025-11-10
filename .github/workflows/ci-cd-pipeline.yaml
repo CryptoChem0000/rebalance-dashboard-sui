@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       environments:
-        description: 'Comma-separated list of environments to deploy (e.g., clamm-bot-1,clamm-bot-2)'
+        description: "Comma-separated list of environments to deploy (e.g., clamm-bot-1,clamm-bot-2)"
         required: false
-        default: ''
+        default: ""
         type: string
 
 env:
@@ -34,11 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.set-matrix.outputs.environments }}
-      valid_environments: ${{ steps.validate-envs.outputs.valid_environments }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Get available environments from GitHub
         id: get-github-envs
         uses: actions/github-script@v6
@@ -64,11 +63,11 @@ jobs:
           # Get GitHub environments
           GITHUB_ENVS='${{ steps.get-github-envs.outputs.github_environments }}'
           echo "GitHub environments: $GITHUB_ENVS"
-          
+
           # Read bot configurations from JSON
           BOT_CONFIGS=$(jq -r 'keys[]' $CONFIG_FILE)
           echo "Configured bots in JSON: $BOT_CONFIGS"
-          
+
           # Determine which environments to deploy
           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.environments }}" ]; then
             # Use manual input if provided
@@ -78,11 +77,11 @@ jobs:
             # Use all bots from config file
             ENVS_ARRAY=($BOT_CONFIGS)
           fi
-          
+
           # Validate each environment
           VALID_ENVS=()
           INVALID_ENVS=()
-          
+
           for env in "${ENVS_ARRAY[@]}"; do
             env=$(echo "$env" | xargs) # Trim whitespace
             
@@ -103,18 +102,18 @@ jobs:
             echo "✅ $env: Valid (found in both config and GitHub environments)"
             VALID_ENVS+=("$env")
           done
-          
+
           # Output results
           if [ ${#VALID_ENVS[@]} -eq 0 ]; then
             echo "::error::No valid environments found to deploy"
             exit 1
           fi
-          
+
           if [ ${#INVALID_ENVS[@]} -gt 0 ]; then
             echo "::warning::Skipping invalid environments: ${INVALID_ENVS[*]}"
           fi
-          
-          # Convert to JSON array for matrix - FIXED: Make it single line
+
+          # Convert to JSON array for matrix - compact format
           VALID_JSON=$(printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s . | jq -c .)
           echo "Valid environments to deploy: $VALID_JSON"
           echo "valid_environments=$VALID_JSON" >> $GITHUB_OUTPUT
@@ -213,18 +212,18 @@ jobs:
         run: |
           # Read the specific bot configuration
           BOT_CONFIG=$(jq -r '."${{ matrix.environment }}"' $CONFIG_FILE)
-          
+
           if [ "$BOT_CONFIG" == "null" ]; then
             echo "::error::Configuration for ${{ matrix.environment }} not found in $CONFIG_FILE"
             exit 1
           fi
-          
+
           # Export each configuration value
           echo "OSMOSIS_POOL_ID=$(echo "$BOT_CONFIG" | jq -r '.OSMOSIS_POOL_ID')" >> $GITHUB_OUTPUT
           echo "REBALANCE_THRESHOLD_PERCENT=$(echo "$BOT_CONFIG" | jq -r '.REBALANCE_THRESHOLD_PERCENT')" >> $GITHUB_OUTPUT
           echo "OSMOSIS_POSITION_BAND_PERCENTAGE=$(echo "$BOT_CONFIG" | jq -r '.OSMOSIS_POSITION_BAND_PERCENTAGE')" >> $GITHUB_OUTPUT
           echo "WATCH_FREQUENCY=$(echo "$BOT_CONFIG" | jq -r '.WATCH_FREQUENCY')" >> $GITHUB_OUTPUT
-          
+
           # Display configuration
           echo "Configuration for ${{ matrix.environment }}:"
           echo "$BOT_CONFIG" | jq .
@@ -248,7 +247,7 @@ jobs:
           echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
           echo "Position Band: $OSMOSIS_POSITION_BAND_PERCENTAGE%"
           echo "Watch Frequency: $WATCH_FREQUENCY seconds"
-          
+
           # Base64 encode the values
           export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
           export OSMOSIS_POOL_ID_B64=$(echo -n "$OSMOSIS_POOL_ID" | base64)
@@ -269,7 +268,7 @@ jobs:
             --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
             --values ./charts/values.yaml \
             --wait --timeout 2m
-          
+
           echo "✅ Successfully deployed $DEPLOYMENT_NAME"
 
       - name: Verify deployment
