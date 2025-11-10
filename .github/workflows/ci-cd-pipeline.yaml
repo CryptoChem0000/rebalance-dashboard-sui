@@ -114,8 +114,8 @@ jobs:
             echo "::warning::Skipping invalid environments: ${INVALID_ENVS[*]}"
           fi
           
-          # Convert to JSON array for matrix
-          VALID_JSON=$(printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s .)
+          # Convert to JSON array for matrix - FIXED: Make it single line
+          VALID_JSON=$(printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s . | jq -c .)
           echo "Valid environments to deploy: $VALID_JSON"
           echo "valid_environments=$VALID_JSON" >> $GITHUB_OUTPUT
 
