@@ -33,7 +33,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
-      environments: ${{ steps.set-matrix.outputs.environments }}
+      environments: ${{ steps.output-matrix.outputs.environments }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,27 +113,61 @@ jobs:
             echo "::warning::Skipping invalid environments: ${INVALID_ENVS[*]}"
           fi
 
-          # Alternative approach - write to file and use artifact
-          printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s -c . > valid-environments.json
-          cat valid-environments.json
-          
-          # Also try direct array format
-          VALID_JSON='['
+          # Save to file for next step
+          printf '%s\n' "${VALID_ENVS[@]}" > valid-envs.txt
+
+      - name: Create matrix output
+        id: output-matrix
+        run: |
+          # Read valid environments from file
+          VALID_ENVS=()
+          while IFS= read -r line; do
+            VALID_ENVS+=("$line")
+          done < valid-envs.txt
+
+          # Create JSON array manually to ensure correct format
+          JSON="["
           for i in "${!VALID_ENVS[@]}"; do
             if [ $i -ne 0 ]; then
-              VALID_JSON="${VALID_JSON},"
+              JSON="${JSON},"
             fi
-            VALID_JSON="${VALID_JSON}\"${VALID_ENVS[$i]}\""
+            # Ensure proper escaping
+            ESCAPED=$(echo "${VALID_ENVS[$i]}" | sed 's/"/\\"/g')
+            JSON="${JSON}\"${ESCAPED}\""
           done
-          VALID_JSON="${VALID_JSON}]"
-          
-          echo "Valid environments to deploy: $VALID_JSON"
-          echo "valid_environments=$VALID_JSON" >> $GITHUB_OUTPUT
+          JSON="${JSON}]"
 
-      - name: Set deployment matrix
-        id: set-matrix
+          echo "Matrix JSON: $JSON"
+
+          # Verify it's valid JSON
+          echo "$JSON" | jq . > /dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            echo "::error::Invalid JSON generated"
+            exit 1
+          fi
+
+          # Output to GitHub
+          echo "environments=$JSON" >> $GITHUB_OUTPUT
+
+          # Also save to artifact for debugging
+          echo "$JSON" > matrix.json
+
+      - name: Upload matrix for debugging
+        uses: actions/upload-artifact@v3
+        with:
+          name: matrix-debug
+          path: matrix.json
+
+  # Add a debug job to verify the output
+  debug-matrix:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug matrix output
         run: |
-          echo "environments=${{ steps.validate-envs.outputs.valid_environments }}" >> $GITHUB_OUTPUT
+          echo "Raw output: ${{ needs.setup.outputs.environments }}"
+          echo "Attempting to parse JSON..."
+          echo '${{ needs.setup.outputs.environments }}' | jq .
 
   build-and-push:
     runs-on: ubuntu-latest
