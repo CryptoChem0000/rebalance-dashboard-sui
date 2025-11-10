@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "feat/bolt-1176-update-cicd-to-dynamically-deploy-bots"
 
   workflow_dispatch:
     inputs:
