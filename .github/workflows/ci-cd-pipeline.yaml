@@ -149,26 +149,6 @@ jobs:
           # Output to GitHub
           echo "environments=$JSON" >> $GITHUB_OUTPUT
 
-          # Also save to artifact for debugging
-          echo "$JSON" > matrix.json
-
-      - name: Upload matrix for debugging
-        uses: actions/upload-artifact@v4
-        with:
-          name: matrix-debug
-          path: matrix.json
-
-  # Add a debug job to verify the output
-  debug-matrix:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - name: Debug matrix output
-        run: |
-          echo "Raw output: ${{ needs.setup.outputs.environments }}"
-          echo "Attempting to parse JSON..."
-          echo '${{ needs.setup.outputs.environments }}' | jq .
-
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -318,7 +298,9 @@ jobs:
           echo "✅ Successfully deployed $DEPLOYMENT_NAME"
 
       - name: Verify deployment
+        env:
+          NAMESPACE: bolt-prod
         run: |
           echo "Checking deployment status..."
-          kubectl -n ${{ env.NAMESPACE }} get deployment ${{ matrix.environment }}
-          kubectl -n ${{ env.NAMESPACE }} get pods -l app.kubernetes.io/instance=${{ matrix.environment }}
+          kubectl -n $NAMESPACE get deployment ${{ matrix.environment }}
+          kubectl -n $NAMESPACE get pods -l app.kubernetes.io/instance=${{ matrix.environment }}
