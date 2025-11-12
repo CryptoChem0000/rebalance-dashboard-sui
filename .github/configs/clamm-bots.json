@@ -1,14 +1,26 @@
 {
-  "clamm-bot-1": {
-    "OSMOSIS_POOL_ID": "1282",
-    "REBALANCE_THRESHOLD_PERCENT": "95",
+  "max-atom-usdc-bot": {
+    "OSMOSIS_POOL_ID": "1251",
+    "REBALANCE_THRESHOLD_PERCENT": "90",
     "OSMOSIS_POSITION_BAND_PERCENTAGE": "1",
-    "WATCH_FREQUENCY": "600"
+    "WATCH_FREQUENCY": "300"
   },
-  "clamm-bot-2": {
-    "OSMOSIS_POOL_ID": "1233",
-    "REBALANCE_THRESHOLD_PERCENT": "95",
-    "OSMOSIS_POSITION_BAND_PERCENTAGE": "0.5",
-    "WATCH_FREQUENCY": "600"
+  "max-inj-usdc-bot": {
+    "OSMOSIS_POOL_ID": "1319",
+    "REBALANCE_THRESHOLD_PERCENT": "90",
+    "OSMOSIS_POSITION_BAND_PERCENTAGE": "1",
+    "WATCH_FREQUENCY": "300"
+  },
+  "max-bot-tia-usdc-bot": {
+    "OSMOSIS_POOL_ID": "1247",
+    "REBALANCE_THRESHOLD_PERCENT": "90",
+    "OSMOSIS_POSITION_BAND_PERCENTAGE": "1",
+    "WATCH_FREQUENCY": "300"
+  },
+  "max-bot-osmo-usdc-bot": {
+    "OSMOSIS_POOL_ID": "1464",
+    "REBALANCE_THRESHOLD_PERCENT": "90",
+    "OSMOSIS_POSITION_BAND_PERCENTAGE": "1",
+    "WATCH_FREQUENCY": "300"
   }
 }
