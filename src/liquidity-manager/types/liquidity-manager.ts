@@ -1,7 +1,7 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 
 import { TokenAmount } from "../../account-balances";
-import { SQLiteTransactionRepository } from "../../database";
+import { TransactionRepository } from "../../database";
 import { AbstractKeyStore } from "../../key-manager";
 import {
   PoolInfoResponse,
@@ -37,7 +37,7 @@ export type LiquidityManagerConfig = MakeLiquidityManagerParams & {
   archwaySigner: OfflineSigner;
   osmosisSigner: OfflineSigner;
   osmosisAddress: string;
-  database: SQLiteTransactionRepository;
+  database: TransactionRepository;
   keyStore: AbstractKeyStore;
 };
 
@@ -69,4 +69,8 @@ export type StatusResponse = {
 export type WithdrawPositionResponse = {
   amount0Withdrawn: TokenAmount;
   amount1Withdrawn: TokenAmount;
+};
+
+export type WithdrawUnknownPositionsResponse = {
+  positionsWithdrawn: string[];
 };

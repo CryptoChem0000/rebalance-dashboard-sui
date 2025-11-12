@@ -29,7 +29,11 @@
     "report": "tsx src/cli/index.ts report",
     "volume": "tsx src/cli/index.ts volume",
     "profit": "tsx src/cli/index.ts profit",
-    "stats": "tsx src/cli/index.ts stats"
+    "stats": "tsx src/cli/index.ts stats",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:generate": "prisma generate",
+    "postinstall": "cross-env DATABASE_URL=${DATABASE_URL:-'postgresql://user:password@localhost:5432/db?schema=public'} prisma generate"
   },
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
@@ -40,17 +44,20 @@
     "@cosmjs/stargate": "^0.36.0",
     "@injectivelabs/sdk-ts": "^1.16.22",
     "@osmonauts/utils": "^1.18.0",
+    "@prisma/client": "^6.19.0",
     "@skip-go/client": "^1.5.9",
     "axios": "^1.11.0",
     "better-sqlite3": "^12.4.1",
     "bignumber.js": "^9.3.1",
     "commander": "^14.0.1",
     "dotenv": "^17.2.2",
-    "osmojs": "^16.15.0"
+    "osmojs": "^16.15.0",
+    "prisma": "^6.19.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^24.3.1",
+    "@types/node": "^24.10.0",
+    "cross-env": "^10.1.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

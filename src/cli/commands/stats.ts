@@ -1,6 +1,12 @@
 import { Command } from "commander";
 
-import { formatDateRange, parseDateOptions, withDatabase } from "../helpers";
+import { AccountStats, DatabaseQueryClient } from "../../database";
+import {
+  formatDateRange,
+  getAddress,
+  parseDateOptions,
+  withDatabase,
+} from "../helpers";
 
 export function statsCommand(program: Command) {
   program
@@ -16,33 +22,42 @@ export function statsCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
+        const address = await getAddress();
         console.log("📈 Transaction Statistics\n");
 
         const { startDate, endDate } = parseDateOptions(options);
 
         formatDateRange(startDate, endDate);
 
-        const summary = await db.getTransactionTypeSummary(startDate, endDate);
+        const summary = await db.getTransactionTypeSummary(
+          address,
+          startDate,
+          endDate
+        );
         console.log(db.formatTransactionSummary(summary));
 
         // Also show account stats
-        const accountStats = await db.getAccountStats(startDate, endDate);
+        const accountStats = await db.getAccountStats(
+          address,
+          startDate,
+          endDate
+        );
         if (accountStats.length > 0) {
           displayDetailedStats(accountStats);
         }
 
         if (options.csv) {
-          await exportStatsToCSV(db, startDate, endDate);
+          await exportStatsToCSV(db, address, startDate, endDate);
         }
       });
     });
 }
 
-function displayDetailedStats(accountStats: any[]) {
+function displayDetailedStats(accountStats: AccountStats[]) {
   console.log("\n📊 Detailed Statistics:");
   console.log("─".repeat(60));
 
-  accountStats.forEach((stat: any) => {
+  accountStats.forEach((stat) => {
     const typeFormatted = stat.transactionType
       .split("_")
       .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -61,13 +76,23 @@ function displayDetailedStats(accountStats: any[]) {
   });
 }
 
-async function exportStatsToCSV(db: any, startDate?: Date, endDate?: Date) {
+async function exportStatsToCSV(
+  db: DatabaseQueryClient,
+  address: string,
+  startDate?: Date,
+  endDate?: Date
+) {
   console.log("\n📁 Exporting to CSV files...");
   const summaryFile = await db.exportTransactionSummaryToCSV(
+    address,
     startDate,
     endDate
   );
-  const statsFile = await db.exportAccountStatsToCSV(startDate, endDate);
+  const statsFile = await db.exportAccountStatsToCSV(
+    address,
+    startDate,
+    endDate
+  );
   console.log("\n✅ CSV files exported:");
   console.log(`   - ${summaryFile}`);
   console.log(`   - ${statsFile}`);

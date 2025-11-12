@@ -1,7 +1,7 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 
 import { TokenAmount } from "../../account-balances";
-import { SQLiteTransactionRepository } from "../../database";
+import { TransactionRepository } from "../../database";
 import { SkipBridging } from "../../ibc-bridging";
 import { AbstractKeyStore } from "../../key-manager";
 import { RegistryToken } from "../../registry";
@@ -11,7 +11,7 @@ export type TokenRebalancerConfig = {
   osmosisSigner: OfflineSigner;
   environment: "mainnet" | "testnet";
   skipBridging: SkipBridging;
-  database: SQLiteTransactionRepository;
+  database: TransactionRepository;
   keyStore: AbstractKeyStore;
 };
 

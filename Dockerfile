@@ -5,9 +5,15 @@ RUN apk add --no-cache dumb-init
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci && npm cache clean --force
 
+# Install dependencies WITHOUT running postinstall
+RUN npm ci --ignore-scripts && npm cache clean --force
+
+# Now copy all source files
 COPY . .
+
+# Run postinstall manually after files are copied
+RUN npm run postinstall
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \

@@ -14,6 +14,7 @@ spec:
       labels:
         {{- include "clamm-bot.selectorLabels" . | nindent 8 }}
     spec:
+      terminationGracePeriodSeconds: 120
       serviceAccountName: {{ include "clamm-bot.serviceAccountName" . }}
       {{- if .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -29,7 +30,7 @@ spec:
           args:
             - |
               set -e
-              mkdir -p /pvc/database /pvc/reports /pvc/docker-files/config
+              mkdir -p /pvc/reports /pvc/docker-files/config
               chown -R 1001:1001 /pvc
           volumeMounts:
             - name: data
@@ -109,9 +110,6 @@ spec:
               #   subPath: config.json
 
               # mount some subdirs from the same PVC
-              - name: data
-                mountPath: /app/database
-                subPath: database
               - name: data
                 mountPath: /app/reports
                 subPath: reports

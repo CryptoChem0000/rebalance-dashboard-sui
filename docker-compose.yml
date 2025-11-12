@@ -7,8 +7,9 @@ services:
     restart: unless-stopped
     stop_grace_period: 120s
     environment:
-      # Your original env vars
+      # Env vars
       - MNEMONIC=${MNEMONIC}
+      - DATABASE_URL=${DATABASE_URL}
 
       # Frequency in seconds when the position status will be checked and a rebalance may happen (default 300 seconds)
       - WATCH_FREQUENCY=${WATCH_FREQUENCY:-300}

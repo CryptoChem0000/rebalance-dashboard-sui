@@ -7,7 +7,12 @@ import {
   OSMOSIS_CREATE_POOL_FEE,
   OSMOSIS_WITHDRAW_LP_POSITION_FEE,
 } from "./constants";
-import { SQLiteTransactionRepository, TransactionType } from "../database";
+import {
+  PostgresTransactionRepository,
+  SQLiteTransactionRepository,
+  TransactionRepository,
+  TransactionType,
+} from "../database";
 import { SkipBridging } from "../ibc-bridging";
 import {
   AbstractKeyStore,
@@ -31,10 +36,7 @@ import {
   RegistryToken,
 } from "../registry";
 import { TokenRebalancer } from "./token-rebalancer";
-import {
-  assertEnoughBalanceForFees,
-  getSignerAddress,
-} from "../utils";
+import { assertEnoughBalanceForFees, getSignerAddress } from "../utils";
 
 import {
   Config,
@@ -44,6 +46,7 @@ import {
   RebalanceResult,
   StatusResponse,
   WithdrawPositionResponse,
+  WithdrawUnknownPositionsResponse,
 } from "./types";
 import { loadConfigWithEnvOverrides } from "./config-loader";
 
@@ -59,7 +62,7 @@ export class LiquidityManager {
   private environment: "mainnet" | "testnet";
   private skipBridging: SkipBridging;
   private tokenRebalancer: TokenRebalancer;
-  public database: SQLiteTransactionRepository;
+  public database: TransactionRepository;
   private keyStore: AbstractKeyStore;
 
   constructor(params: LiquidityManagerConfig) {
@@ -99,7 +102,9 @@ export class LiquidityManager {
   static async make(
     params: MakeLiquidityManagerParams
   ): Promise<LiquidityManager> {
-    const { config, configPath } = await loadConfigWithEnvOverrides(params.configFilePath);
+    const { config, configPath } = await loadConfigWithEnvOverrides(
+      params.configFilePath
+    );
     const keyStore = await KeyManager.create({
       type: KeyStoreType.ENV_VARIABLE,
     });
@@ -114,7 +119,9 @@ export class LiquidityManager {
     );
     const osmosisAddress = await getSignerAddress(osmosisSigner);
 
-    const database = await SQLiteTransactionRepository.make(osmosisAddress);
+    const database = await (process.env.DATABASE_URL
+      ? PostgresTransactionRepository.make()
+      : SQLiteTransactionRepository.make(osmosisAddress));
 
     return new LiquidityManager({
       ...params,
@@ -166,6 +173,17 @@ export class LiquidityManager {
           `Config file updated for pool id ${this.config.osmosisPool.id}`
         );
       }
+    }
+
+    // Withdraw unknown existing positions if any
+    const unknownPositionsResult = await this.withdrawUnknownPositions(
+      pool,
+      this.config.osmosisPosition.id
+    );
+
+    // Refresh balance if there were unknown positions
+    if (unknownPositionsResult.positionsWithdrawn.length > 0) {
+      osmosisBalances = await this.getOsmosisAccountBalances();
     }
 
     // Check if we have a position and if it needs rebalancing
@@ -223,6 +241,7 @@ export class LiquidityManager {
             signerAddress: this.osmosisAddress,
             chainId: this.osmosisChainInfo.id,
             transactionType: TransactionType.WITHDRAW_POSITION,
+            positionId: this.config.osmosisPosition.id,
             outputAmount: withdrawResult.tokenAmount0.humanReadableAmount,
             outputTokenDenom: withdrawResult.tokenAmount0.token.denom,
             outputTokenName: withdrawResult.tokenAmount0.token.name,
@@ -241,6 +260,7 @@ export class LiquidityManager {
                   signerAddress: this.osmosisAddress,
                   chainId: this.osmosisChainInfo.id,
                   transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
+                  positionId: this.config.osmosisPosition.id,
                   outputAmount:
                     withdrawResult.rewardsCollected[0]?.humanReadableAmount,
                   outputTokenDenom:
@@ -265,13 +285,17 @@ export class LiquidityManager {
         this.config.osmosisPosition.id = "";
         await this.saveConfig();
         osmosisBalances = await this.getOsmosisAccountBalances();
-      } catch (error) {
-        console.error(
-          "Error checking position, it might not exist. Creating new position...",
-          error
-        );
-        this.config.osmosisPosition.id = "";
-        await this.saveConfig();
+      } catch (error: any) {
+        if (error?.message?.includes?.("position not found")) {
+          console.error(
+            "Error finding position, it might not exist. Ignoring and creating new position...",
+            error
+          );
+          this.config.osmosisPosition.id = "";
+          await this.saveConfig();
+        } else {
+          throw error;
+        }
       }
     }
 
@@ -483,6 +507,7 @@ export class LiquidityManager {
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POSITION,
+      positionId: result.positionId,
       inputAmount: result.tokenAmount0.humanReadableAmount,
       inputTokenDenom: result.tokenAmount0.token.denom,
       inputTokenName: result.tokenAmount0.token.name,
@@ -584,6 +609,7 @@ export class LiquidityManager {
         signerAddress: this.osmosisAddress,
         chainId: this.osmosisChainInfo.id,
         transactionType: TransactionType.WITHDRAW_POSITION,
+        positionId: this.config.osmosisPosition.id,
         outputAmount: result.tokenAmount0.humanReadableAmount,
         outputTokenDenom: result.tokenAmount0.token.denom,
         outputTokenName: result.tokenAmount0.token.name,
@@ -602,6 +628,7 @@ export class LiquidityManager {
               signerAddress: this.osmosisAddress,
               chainId: this.osmosisChainInfo.id,
               transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
+              positionId: this.config.osmosisPosition.id,
               outputAmount: result.rewardsCollected[0]?.humanReadableAmount,
               outputTokenDenom: result.rewardsCollected[0]?.token.denom,
               outputTokenName: result.rewardsCollected[0]?.token.name,
@@ -640,6 +667,56 @@ export class LiquidityManager {
     return {
       amount0Withdrawn: result.tokenAmount0,
       amount1Withdrawn: result.tokenAmount1,
+    };
+  }
+
+  private async withdrawUnknownPositions(
+    poolManager: OsmosisCLPool,
+    currentPositionId?: string,
+    osmosisBalances?: Record<string, TokenAmount>
+  ): Promise<WithdrawUnknownPositionsResponse> {
+    const openPositions = await poolManager.getPositions();
+    const unknownPositions = openPositions.filter(
+      (item) => item.position.positionId !== currentPositionId
+    );
+
+    // Withdraw unknown positions if any
+    const innerOsmosisBalances =
+      osmosisBalances ?? (await this.getOsmosisAccountBalances());
+    assertEnoughBalanceForFees(
+      innerOsmosisBalances,
+      this.osmosisChainInfo.nativeToken,
+      BigNumber(OSMOSIS_WITHDRAW_LP_POSITION_FEE).times(
+        unknownPositions.length
+      ),
+      "withdraw unknown positions"
+    );
+    for (const auxPosition of unknownPositions) {
+      console.log(
+        `Withdrawing unknown position ${auxPosition.position.positionId}...`
+      );
+      const withdrawResult = await poolManager.withdrawPosition({
+        positionId: auxPosition.position.positionId,
+        liquidityAmount: auxPosition.position.liquidity,
+      });
+
+      this.database.addTransaction({
+        signerAddress: this.osmosisAddress,
+        chainId: this.osmosisChainInfo.id,
+        transactionType: TransactionType.WITHDRAW_RECONCILIATION,
+        positionId: auxPosition.position.liquidity,
+        gasFeeAmount: withdrawResult.gasFees?.humanReadableAmount,
+        gasFeeTokenDenom: withdrawResult.gasFees?.token.denom,
+        gasFeeTokenName: withdrawResult.gasFees?.token.name,
+        txHash: withdrawResult.txHash,
+        successful: true,
+      });
+    }
+
+    return {
+      positionsWithdrawn: unknownPositions.map(
+        (item) => item.position.positionId
+      ),
     };
   }
 

@@ -15,7 +15,7 @@ import {
   OSMOSIS_IBC_TRANSFER_FEE,
   OSMOSIS_WITHDRAW_LP_POSITION_FEE,
 } from "./constants";
-import { SQLiteTransactionRepository, TransactionType } from "../database";
+import { TransactionRepository, TransactionType } from "../database";
 import { SkipBridging } from "../ibc-bridging";
 import { AbstractKeyStore } from "../key-manager";
 import { getPairPriceOnBoltArchway } from "../prices";
@@ -50,7 +50,7 @@ export class TokenRebalancer {
   private archwayTokensMap: Record<string, RegistryToken>;
   private osmosisChainInfo: ChainInfo;
   private osmosisTokensMap: Record<string, RegistryToken>;
-  private database: SQLiteTransactionRepository;
+  private database: TransactionRepository;
   private keyStore: AbstractKeyStore;
 
   constructor(config: TokenRebalancerConfig) {
@@ -234,9 +234,10 @@ export class TokenRebalancer {
     // Calculate available Osmosis balance considering fees if it's the native token
     const osmosisFeeReserve =
       token.denom === this.osmosisChainInfo.nativeToken.denom
-        ? BigNumber(OSMOSIS_IBC_TRANSFER_FEE).plus(
-            OSMOSIS_CREATE_LP_POSITION_FEE
-          )
+        ? BigNumber(OSMOSIS_IBC_TRANSFER_FEE)
+            .plus(OSMOSIS_CREATE_LP_POSITION_FEE)
+            .plus(OSMOSIS_WITHDRAW_LP_POSITION_FEE)
+            .times(2)
         : BigNumber(0);
 
     const availableOsmosisBalance = BigNumber.max(
@@ -250,6 +251,7 @@ export class TokenRebalancer {
         ? BigNumber(ARCHWAY_BOLT_SWAP_FEE)
             .plus(ARCHWAY_IBC_TRANSFER_FEE)
             .plus(ARCHWAY_IBC_TRANSFER_FEE)
+            .times(2)
         : BigNumber(0);
 
     const availableArchwayBalance = BigNumber.max(

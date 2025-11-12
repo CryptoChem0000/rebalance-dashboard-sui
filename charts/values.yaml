@@ -24,6 +24,7 @@ secrets:
     enabled: true
     data:
       # These will be set from GitHub Actions
+      DATABASE_URL: ""
       MNEMONIC: ""
       OSMOSIS_POOL_ID: ""
       REBALANCE_THRESHOLD_PERCENT: ""

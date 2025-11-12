@@ -1,7 +1,7 @@
-import type { SQLiteTransactionRepository } from "../account-transactions";
+import { TransactionRepository } from "./transaction-repository";
 
 export interface DatabaseQueriesConfig {
-  database: SQLiteTransactionRepository;
+  database: TransactionRepository;
   osmosisAddress: string;
 }
 

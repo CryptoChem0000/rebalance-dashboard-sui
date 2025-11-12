@@ -17,7 +17,11 @@ import {
   getSignerAddress,
   parseCoinToTokenAmount,
 } from "../utils";
-import { extractRewardsCollected, simulateFees } from "./utils";
+import {
+  extractPositionInfoResponse,
+  extractRewardsCollected,
+  simulateFees,
+} from "./utils";
 
 import {
   AuthorizedTickSpacing,
@@ -285,22 +289,21 @@ export class OsmosisCLPool {
         }
       );
 
-    return {
-      position: {
-        positionId: BigNumber(result.position.position.positionId).toFixed(),
-        address: result.position.position.address,
-        poolId: BigNumber(result.position.position.poolId).toFixed(),
-        lowerTick: BigNumber(result.position.position.lowerTick).toFixed(),
-        upperTick: BigNumber(result.position.position.upperTick).toFixed(),
-        joinTime: result.position.position.joinTime,
-        liquidity: result.position.position.liquidity,
-      },
-      asset0: result.position.asset0,
-      asset1: result.position.asset1,
-      claimableSpreadRewards: result.position.claimableSpreadRewards,
-      claimableIncentives: result.position.claimableIncentives,
-      forfeitedIncentives: result.position.forfeitedIncentives,
-    };
+    return extractPositionInfoResponse(result.position);
+  }
+
+  async getPositions(): Promise<PositionInfoResponse[]> {
+    const address = await getSignerAddress(this.signer);
+
+    const result =
+      await this.queryClient.osmosis.concentratedliquidity.v1beta1.userPositions(
+        {
+          address,
+          poolId: BigInt(this.poolId),
+        }
+      );
+
+    return result.positions.map((item) => extractPositionInfoResponse(item));
   }
 
   async isPositionInRange(

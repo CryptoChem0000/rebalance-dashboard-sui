@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AccountTransaction {
+  id                     String   @id @default(cuid())
+  signerAddress          String   @map("signer_address")
+  chainId                String   @map("chain_id")
+  transactionType        String   @map("transaction_type")
+  positionId             String?  @map("position_id")
+  inputAmount            String?  @map("input_amount")
+  inputTokenDenom        String?  @map("input_token_denom")
+  inputTokenName         String?  @map("input_token_name")
+  secondInputAmount      String?  @map("second_input_amount")
+  secondInputTokenDenom  String?  @map("second_input_token_denom")
+  secondInputTokenName   String?  @map("second_input_token_name")
+  outputAmount           String?  @map("output_amount")
+  outputTokenDenom       String?  @map("output_token_denom")
+  outputTokenName        String?  @map("output_token_name")
+  secondOutputAmount     String?  @map("second_output_amount")
+  secondOutputTokenDenom String?  @map("second_output_token_denom")
+  secondOutputTokenName  String?  @map("second_output_token_name")
+  gasFeeAmount           String?  @map("gas_fee_amount")
+  gasFeeTokenDenom       String?  @map("gas_fee_token_denom")
+  gasFeeTokenName        String?  @map("gas_fee_token_name")
+  destinationAddress     String?  @map("destination_address")
+  destinationChainId     String?  @map("destination_chain_id")
+  txHash                 String   @map("tx_hash")
+  txActionIndex          Int      @default(0) @map("tx_action_index")
+  successful             Boolean
+  error                  String?
+  timestamp              DateTime @default(now())
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@unique([chainId, txHash, txActionIndex])
+  @@index([transactionType, timestamp])
+  @@index([timestamp])
+  @@index([chainId, timestamp])
+  @@index([chainId, txHash])
+  @@index([inputTokenName, outputTokenName])
+  @@index([signerAddress, timestamp])
+  @@map("account_transactions")
+}

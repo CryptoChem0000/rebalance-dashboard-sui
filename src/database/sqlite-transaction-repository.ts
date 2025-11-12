@@ -8,6 +8,10 @@ import {
   AccountTransaction,
   TransactionRepository,
   TransactionType,
+  AccountStats,
+  VolumeByToken,
+  ProfitabilityByToken,
+  TransactionTypeSummary,
 } from "./types";
 
 export class SQLiteTransactionRepository implements TransactionRepository {
@@ -57,6 +61,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         signer_address VARCHAR(42) NOT NULL,
         chain_id VARCHAR(42) NOT NULL,
         transaction_type VARCHAR(50) NOT NULL,
+        position_id VARCHAR(255),
         input_amount VARCHAR(78),
         input_token_denom VARCHAR(100),
         input_token_name VARCHAR(42),
@@ -100,6 +105,9 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       
       CREATE INDEX IF NOT EXISTS idx_token_names 
       ON account_transactions(input_token_name, output_token_name);
+      
+      CREATE INDEX IF NOT EXISTS idx_signer_address_timestamp
+      ON account_transactions(signer_address, timestamp DESC);
     `);
   }
 
@@ -107,7 +115,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     // Insert statement using named parameters for clarity
     this.insertStmt = this.db.prepare(`
       INSERT INTO account_transactions (
-        signer_address, chain_id, transaction_type,
+        signer_address, chain_id, transaction_type, position_id,
         input_amount, input_token_denom, input_token_name,
         second_input_amount, second_input_token_denom, second_input_token_name,
         output_amount, output_token_denom, output_token_name,
@@ -117,7 +125,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         tx_hash, tx_action_index,
         successful, error, timestamp
       ) VALUES (
-        @signerAddress, @chainId, @transactionType,
+        @signerAddress, @chainId, @transactionType, @positionId,
         @inputAmount, @inputTokenDenom, @inputTokenName,
         @secondInputAmount, @secondInputTokenDenom, @secondInputTokenName,
         @outputAmount, @outputTokenDenom, @outputTokenName,
@@ -130,6 +138,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       ON CONFLICT(chain_id, tx_hash, tx_action_index) DO UPDATE SET
         signer_address = excluded.signer_address,
         transaction_type = excluded.transaction_type,
+        position_id = excluded.position_id,
         input_amount = excluded.input_amount,
         input_token_denom = excluded.input_token_denom,
         input_token_name = excluded.input_token_name,
@@ -167,6 +176,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       signerAddress: row.signer_address,
       chainId: row.chain_id,
       transactionType: row.transaction_type as TransactionType,
+      positionId: row.position_id,
       inputAmount: row.input_amount,
       inputTokenDenom: row.input_token_denom,
       inputTokenName: row.input_token_name,
@@ -198,6 +208,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       signerAddress: tx.signerAddress,
       chainId: tx.chainId,
       transactionType: tx.transactionType,
+      positionId: tx.positionId || null,
       inputAmount: tx.inputAmount || null,
       inputTokenDenom: tx.inputTokenDenom || null,
       inputTokenName: tx.inputTokenName || null,
@@ -223,17 +234,23 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     };
   }
 
-  // Helper method to build time filter for SQL queries
-  private buildTimeFilter(startTime?: Date, endTime?: Date): string {
+  // Helper method to build filters
+  private buildFilters(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): string {
     let filter = "";
 
+    if (signerAddress !== undefined) {
+      filter += ` AND signer_address = '${signerAddress}'`;
+    }
+
     if (startTime !== undefined) {
-      // Convert milliseconds to seconds
       filter += ` AND timestamp >= ${Math.floor(startTime.getTime() / 1000)}`;
     }
 
     if (endTime !== undefined) {
-      // Convert milliseconds to seconds
       filter += ` AND timestamp <= ${Math.floor(endTime.getTime() / 1000)}`;
     }
 
@@ -265,16 +282,17 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getAccountTransactions(
+    signerAddress: string,
     limit: number = 100,
     offset: number = 0,
     startTime?: Date,
     endTime?: Date
   ): AccountTransaction[] {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       SELECT * FROM account_transactions 
-      WHERE 1=1 ${timeFilter}
+      WHERE 1=1 ${filters}
       ORDER BY timestamp DESC, tx_action_index
       LIMIT ? OFFSET ?
     `);
@@ -285,47 +303,35 @@ export class SQLiteTransactionRepository implements TransactionRepository {
 
   getTransactionsByType(
     transactionType: TransactionType,
+    signerAddress?: string,
     limit: number = 100,
     startTime?: Date,
     endTime?: Date
   ): AccountTransaction[] {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
+    let typeFilter = "";
+    
+    if (transactionType) {
+      typeFilter = ` AND transaction_type = '${transactionType}'`;
+    }
     
     const query = this.db.prepare(`
       SELECT * FROM account_transactions 
-      WHERE transaction_type = ? ${timeFilter}
+      WHERE 1=1 ${typeFilter} ${filters}
       ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
     
-    const rows = query.all(transactionType, limit);
+    const rows = query.all(limit);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
-  // Get transactions by multiple types
-  getTransactionsByTypes(
-    transactionTypes: TransactionType[],
-    limit: number = 100,
+  getAccountStats(
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
-  ): AccountTransaction[] {
-    const placeholders = transactionTypes.map(() => "?").join(",");
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
-    
-    const query = this.db.prepare(`
-      SELECT * FROM account_transactions 
-      WHERE transaction_type IN (${placeholders}) ${timeFilter}
-      ORDER BY timestamp DESC, tx_action_index
-      LIMIT ?
-    `);
-
-    const rows = query.all(...transactionTypes, limit);
-    return rows.map((row) => this.rowToTransaction(row)!);
-  }
-
-  // Account stats without unique destinations or chains used
-  getAccountStats(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  ): AccountStats[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       WITH account_summary AS (
@@ -336,7 +342,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           MIN(timestamp) as first_transaction,
           MAX(timestamp) as last_transaction
         FROM account_transactions
-        WHERE 1=1 ${timeFilter}
+        WHERE 1=1 ${filters}
         GROUP BY transaction_type
       )
       SELECT 
@@ -350,12 +356,15 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       ORDER BY count DESC
     `);
 
-    return query.all();
+    return query.all() as AccountStats[];
   }
 
-  // Archway Bolt volume - sum of all amounts in and out for BOLT_ARCHWAY_SWAP
-  getArchwayBoltVolume(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  getArchwayBoltVolume(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): VolumeByToken[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       WITH bolt_volumes AS (
@@ -370,7 +379,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND input_amount IS NOT NULL 
             AND input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -381,7 +390,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND second_input_amount IS NOT NULL 
             AND second_input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -392,7 +401,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND output_amount IS NOT NULL 
             AND output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -403,24 +412,27 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND second_output_amount IS NOT NULL 
             AND second_output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
         ) AS all_amounts
         GROUP BY token_name
       )
       SELECT 
         token_name as tokenName,
         total_volume as totalVolume,
-        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'bolt_archway_swap' AND successful = 1 ${timeFilter}) as totalSwaps
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'bolt_archway_swap' AND successful = 1 ${filters}) as totalSwaps
       FROM bolt_volumes
       ORDER BY total_volume DESC
     `);
 
-    return query.all();
+    return query.all() as VolumeByToken[];
   }
 
-  // Osmosis volume - sum of all amounts in and out for CREATE_POSITION and WITHDRAW_POSITION
-  getOsmosisVolume(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  getOsmosisVolume(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): VolumeByToken[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       WITH osmosis_volumes AS (
@@ -435,7 +447,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND input_amount IS NOT NULL 
             AND input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -446,7 +458,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND second_input_amount IS NOT NULL 
             AND second_input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -457,7 +469,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND output_amount IS NOT NULL 
             AND output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -468,24 +480,27 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND second_output_amount IS NOT NULL 
             AND second_output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
         ) AS all_amounts
         GROUP BY token_name
       )
       SELECT 
         token_name as tokenName,
         total_volume as totalVolume,
-        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type IN ('create_position', 'withdraw_position') AND successful = 1 ${timeFilter}) as totalOperations
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type IN ('create_position', 'withdraw_position') AND successful = 1 ${filters}) as totalOperations
       FROM osmosis_volumes
       ORDER BY total_volume DESC
     `);
 
-    return query.all();
+    return query.all() as VolumeByToken[];
   }
 
-  // Bridge volume - sum of all amounts in and out for IBC_TRANSFER
-  getBridgeVolume(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  getBridgeVolume(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): VolumeByToken[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       WITH bridge_volumes AS (
@@ -500,7 +515,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND input_amount IS NOT NULL 
             AND input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -511,24 +526,27 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND successful = 1
             AND output_amount IS NOT NULL 
             AND output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
         ) AS all_amounts
         GROUP BY token_name
       )
       SELECT 
         token_name as tokenName,
         total_volume as totalVolume,
-        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'ibc_transfer' AND successful = 1 ${timeFilter}) as totalTransfers
+        (SELECT COUNT(DISTINCT tx_hash) FROM account_transactions WHERE transaction_type = 'ibc_transfer' AND successful = 1 ${filters}) as totalTransfers
       FROM bridge_volumes
       ORDER BY total_volume DESC
     `);
 
-    return query.all();
+    return query.all() as VolumeByToken[];
   }
 
-  // Profitability - consider all input amounts and gas as payments, output amounts as receipts
-  getProfitability(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  getProfitability(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): ProfitabilityByToken[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       WITH token_flows AS (
@@ -544,7 +562,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           WHERE successful = 1
             AND input_amount IS NOT NULL 
             AND input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -554,7 +572,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           WHERE successful = 1
             AND second_input_amount IS NOT NULL 
             AND second_input_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -564,7 +582,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           WHERE successful = 1
             AND gas_fee_amount IS NOT NULL 
             AND gas_fee_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
         ) AS payments
         GROUP BY token_name
         
@@ -582,7 +600,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           WHERE successful = 1
             AND output_amount IS NOT NULL 
             AND output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
           
           UNION ALL
           
@@ -592,7 +610,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
           WHERE successful = 1
             AND second_output_amount IS NOT NULL 
             AND second_output_token_name IS NOT NULL
-            ${timeFilter}
+            ${filters}
         ) AS receipts
         GROUP BY token_name
       ),
@@ -618,12 +636,15 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       ORDER BY net_balance DESC
     `);
 
-    return query.all();
+    return query.all() as ProfitabilityByToken[];
   }
 
-  // Get summary by transaction type (without signerAddress filter)
-  getTransactionTypeSummary(startTime?: Date, endTime?: Date): any {
-    const timeFilter = this.buildTimeFilter(startTime, endTime);
+  getTransactionTypeSummary(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): TransactionTypeSummary[] {
+    const filters = this.buildFilters(signerAddress, startTime, endTime);
     
     const query = this.db.prepare(`
       SELECT 
@@ -633,12 +654,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         SUM(CASE WHEN successful = 0 THEN 1 ELSE 0 END) as failedCount,
         CAST(SUM(CASE WHEN successful = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as successRate
       FROM account_transactions
-      WHERE 1=1 ${timeFilter}
+      WHERE 1=1 ${filters}
       GROUP BY transaction_type
       ORDER BY totalCount DESC
     `);
 
-    return query.all();
+    return query.all() as TransactionTypeSummary[];
   }
 
   close(): void {

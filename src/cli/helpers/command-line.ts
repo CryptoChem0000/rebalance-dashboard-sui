@@ -1,8 +1,10 @@
 import { DatabaseQueryClient } from "../../database";
 import { simpleGracefulShutdown } from "./graceful-shutdown";
+import { DEFAULT_KEY_NAME, KeyManager, KeyStoreType } from "../../key-manager";
 import { Logger } from "./logger";
+import { findOsmosisChainInfo } from "../../registry";
 
-export function withErrorHandling(fn: Function) {
+export const withErrorHandling = (fn: Function) => {
   return async (...args: any[]) => {
     try {
       await fn(...args);
@@ -12,12 +14,12 @@ export function withErrorHandling(fn: Function) {
       process.exit(1);
     }
   };
-}
+};
 
-export async function withLogger(
+export const withLogger = async (
   options: any,
   callback: (logger: Logger) => Promise<void>
-) {
+) => {
   const logger = new Logger(options.logFile);
 
   try {
@@ -30,12 +32,12 @@ export async function withLogger(
   } finally {
     logger.close();
   }
-}
+};
 
-export function withDatabase(
+export const withDatabase = (
   options: any,
   callback: (db: DatabaseQueryClient) => Promise<void>
-) {
+) => {
   return simpleGracefulShutdown(async () => {
     let dbQueryClient: DatabaseQueryClient | undefined;
 
@@ -49,9 +51,9 @@ export function withDatabase(
       dbQueryClient?.close();
     }
   });
-}
+};
 
-export function formatDateRange(startDate?: Date, endDate?: Date) {
+export const formatDateRange = (startDate?: Date, endDate?: Date) => {
   if (startDate || endDate) {
     console.log(
       `📅 Date range: ${
@@ -59,9 +61,9 @@ export function formatDateRange(startDate?: Date, endDate?: Date) {
       } to ${endDate ? endDate.toLocaleDateString() : "Now"}\n`
     );
   }
-}
+};
 
-export function displayTransactionDetails(tx: any, index: number) {
+export const displayTransactionDetails = (tx: any, index: number) => {
   console.log(
     `${index + 1}. ${new Date((tx.timestamp || 0) * 1000).toLocaleString()}`
   );
@@ -96,4 +98,17 @@ export function displayTransactionDetails(tx: any, index: number) {
     console.log(`   Error: ${tx.error}`);
   }
   console.log();
-}
+};
+
+export const getAddress = async (
+  keyStoreType = KeyStoreType.ENV_VARIABLE,
+  environment: "mainnet" | "testnet" = "mainnet"
+): Promise<string> => {
+  const keyStore = await KeyManager.create({
+    type: keyStoreType,
+  });
+  return await keyStore.getAddress(
+    DEFAULT_KEY_NAME,
+    findOsmosisChainInfo(environment).prefix
+  );
+};

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 
-import { parseDateOptions, withDatabase } from "../helpers";
+import { getAddress, parseDateOptions, withDatabase } from "../helpers";
 
 export function reportCommand(program: Command) {
   program
@@ -16,15 +16,20 @@ export function reportCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
+        const address = await getAddress();
         console.log("📊 Generating database report...\n");
 
         const { startDate, endDate } = parseDateOptions(options);
-        const report = await db.getFullReport(startDate, endDate);
+        const report = await db.getFullReport(address, startDate, endDate);
         console.log(report);
 
         if (options.csv) {
           console.log("\n📁 Exporting to CSV files...");
-          const files = await db.exportFullReportToCSV(startDate, endDate);
+          const files = await db.exportFullReportToCSV(
+            address,
+            startDate,
+            endDate
+          );
           console.log("\n✅ CSV files exported:");
           files.forEach((file) => console.log(`   - ${file}`));
         }

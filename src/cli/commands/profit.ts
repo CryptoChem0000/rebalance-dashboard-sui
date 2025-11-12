@@ -1,6 +1,11 @@
 import { Command } from "commander";
 
-import { formatDateRange, parseDateOptions, withDatabase } from "../helpers";
+import {
+  formatDateRange,
+  getAddress,
+  parseDateOptions,
+  withDatabase,
+} from "../helpers";
 
 export function profitCommand(program: Command) {
   program
@@ -16,18 +21,27 @@ export function profitCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
+        const address = await getAddress();
         console.log("💰 Calculating profitability...\n");
 
         const { startDate, endDate } = parseDateOptions(options);
 
         formatDateRange(startDate, endDate);
 
-        const profitability = await db.getProfitability(startDate, endDate);
+        const profitability = await db.getProfitability(
+          address,
+          startDate,
+          endDate
+        );
         console.log(db.formatProfitabilityData(profitability));
 
         if (options.csv) {
           console.log("\n📁 Exporting to CSV file...");
-          const file = await db.exportProfitabilityToCSV(startDate, endDate);
+          const file = await db.exportProfitabilityToCSV(
+            address,
+            startDate,
+            endDate
+          );
           console.log(`\n✅ CSV file exported: ${file}`);
         }
       });

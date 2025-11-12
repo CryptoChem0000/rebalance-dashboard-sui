@@ -113,6 +113,18 @@ jobs:
 
           # Save to file for next step
           printf '%s\n' "${VALID_ENVS[@]}" > valid-envs.txt
+          
+          # Also output count for verification
+          echo "Total valid environments: ${#VALID_ENVS[@]}"
+
+      - name: Validate DATABASE_URL repository secret exists
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::error::DATABASE_URL repository secret not found"
+            echo "Please add the DATABASE_URL secret to the repository secrets"
+            exit 1
+          fi
+          echo "✅ DATABASE_URL repository secret found"
 
       - name: Create matrix output
         id: output-matrix
@@ -122,7 +134,7 @@ jobs:
           while IFS= read -r line; do
             VALID_ENVS+=("$line")
           done < valid-envs.txt
-
+          
           # Create JSON array manually to ensure correct format
           JSON="["
           for i in "${!VALID_ENVS[@]}"; do
@@ -134,16 +146,16 @@ jobs:
             JSON="${JSON}\"${ESCAPED}\""
           done
           JSON="${JSON}]"
-
+          
           echo "Matrix JSON: $JSON"
-
+          
           # Verify it's valid JSON
           echo "$JSON" | jq . > /dev/null 2>&1
           if [ $? -ne 0 ]; then
             echo "::error::Invalid JSON generated"
             exit 1
           fi
-
+          
           # Output to GitHub
           echo "environments=$JSON" >> $GITHUB_OUTPUT
 
@@ -258,7 +270,9 @@ jobs:
           COMMIT_HASH: ${{ github.sha }}
           DEPLOYMENT_NAME: ${{ matrix.environment }}
           NAMESPACE: bolt-prod
-          # Secret from GitHub environment
+          # Repository secrets
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Secrets from GitHub environment
           MNEMONIC: ${{ secrets.MNEMONIC }}
           # Values from JSON config
           OSMOSIS_POOL_ID: ${{ steps.bot-config.outputs.OSMOSIS_POOL_ID }}
@@ -273,6 +287,7 @@ jobs:
           echo "Watch Frequency: $WATCH_FREQUENCY seconds"
 
           # Base64 encode the values
+          export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
           export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
           export OSMOSIS_POOL_ID_B64=$(echo -n "$OSMOSIS_POOL_ID" | base64)
           export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
@@ -285,6 +300,7 @@ jobs:
             --create-namespace \
             --set image.repository=${REGISTRY}/${IMAGE_NAME} \
             --set image.tag=sha-${COMMIT_HASH:0:7} \
+            --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
             --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
             --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID_B64" \
             --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
@@ -302,3 +318,83 @@ jobs:
           echo "Checking deployment status..."
           kubectl -n $NAMESPACE get deployment ${{ matrix.environment }}
           kubectl -n $NAMESPACE get pods -l app.kubernetes.io/instance=${{ matrix.environment }}
+
+  # Cleanup job runs AFTER deploy to stop removed bots
+  cleanup:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    # Only run on non-manual triggers or when no specific environments were selected
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.environments == ''
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+        
+      - name: Stop removed bots (preserve data)
+        env:
+          NAMESPACE: bolt-prod
+        run: |
+          echo "🔍 Checking for bots to stop..."
+          
+          # Get all deployed clamm-bot deployments
+          DEPLOYED=$(kubectl get deployments -n $NAMESPACE -o json | jq -r '.items[] | select(.metadata.name | startswith("clamm-bot-")) | .metadata.name')
+          
+          if [ -z "$DEPLOYED" ]; then
+            echo "No clamm-bot deployments found"
+            exit 0
+          fi
+          
+          # Get configured bots
+          CONFIGURED=$(jq -r 'keys[]' $CONFIG_FILE)
+          
+          echo "Deployed bots: $DEPLOYED"
+          echo "Configured bots: $CONFIGURED"
+          
+          # Find bots to stop
+          STOPPED_COUNT=0
+          for bot in $DEPLOYED; do
+            if ! echo "$CONFIGURED" | grep -q "^$bot$"; then
+              # Check current replica count
+              CURRENT_REPLICAS=$(kubectl get deployment $bot -n $NAMESPACE -o jsonpath='{.spec.replicas}')
+              
+              if [ "$CURRENT_REPLICAS" -gt "0" ]; then
+                echo "⏸️  Stopping $bot (not in config anymore)..."
+                kubectl scale deployment $bot --replicas=0 -n $NAMESPACE
+                echo "✅ $bot stopped but preserved (PVC and configs intact)"
+                
+                # Add a label to indicate it's stopped by automation
+                kubectl label deployment $bot -n $NAMESPACE stopped-by-automation=true --overwrite
+                kubectl annotate deployment $bot -n $NAMESPACE stopped-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+                
+                STOPPED_COUNT=$((STOPPED_COUNT + 1))
+              else
+                echo "ℹ️  $bot is already stopped"
+              fi
+            else
+              echo "✅ $bot is configured and should be running"
+            fi
+          done
+          
+          if [ $STOPPED_COUNT -eq 0 ]; then
+            echo "No bots needed to be stopped"
+          fi
+          
+          echo ""
+          echo "📋 Summary of all stopped bots:"
+          kubectl get deployments -n $NAMESPACE -l stopped-by-automation=true -o custom-columns="NAME:.metadata.name,STOPPED_AT:.metadata.annotations.stopped-at,REPLICAS:.spec.replicas" 2>/dev/null || echo "No stopped bots found"

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { access, mkdir, writeFile } from "node:fs/promises";
 
-import { SQLiteTransactionRepository } from "./account-transactions";
+import { PostgresTransactionRepository } from "./postgres-transaction-repository";
 import { DEFAULT_KEY_NAME, KeyManager, KeyStoreType } from "../key-manager";
 import { findOsmosisChainInfo } from "../registry";
 import { getSignerAddress, getWorkingDirectory } from "../utils";
@@ -12,13 +12,15 @@ import type {
   DatabaseQueriesConfig,
   MakeDatabaseQueriesParams,
   ProfitabilityByToken,
+  TransactionRepository,
   TransactionType,
   TransactionTypeSummary,
   VolumeByToken,
 } from "./types";
+import { SQLiteTransactionRepository } from "./sqlite-transaction-repository";
 
 export class DatabaseQueryClient {
-  private database: SQLiteTransactionRepository;
+  private database: TransactionRepository;
   private osmosisAddress: string;
 
   constructor(params: DatabaseQueriesConfig) {
@@ -33,14 +35,16 @@ export class DatabaseQueryClient {
       type: KeyStoreType.ENV_VARIABLE,
     });
 
-    // Get the Osmosis address which is used as the database filename
+    // Get the Osmosis address
     const osmosisSigner = await keyStore.getSigner(
       DEFAULT_KEY_NAME,
       findOsmosisChainInfo(params.environment).prefix
     );
     const osmosisAddress = await getSignerAddress(osmosisSigner);
 
-    const database = await SQLiteTransactionRepository.make(osmosisAddress);
+    const database = await (process.env.DATABASE_URL
+      ? PostgresTransactionRepository.make()
+      : SQLiteTransactionRepository.make(osmosisAddress));
 
     return new DatabaseQueryClient({
       ...params,
@@ -51,12 +55,15 @@ export class DatabaseQueryClient {
 
   // Get recent transactions
   async getRecentTransactions(
+    signerAddress?: string,
     limit: number = 100,
     offset: number = 0,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountTransaction[]> {
+    const address = signerAddress || this.osmosisAddress;
     return this.database.getAccountTransactions(
+      address,
       limit,
       offset,
       startTime,
@@ -67,12 +74,14 @@ export class DatabaseQueryClient {
   // Get transactions by type
   async getTransactionsByType(
     transactionType: TransactionType,
+    signerAddress?: string,
     limit: number = 100,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountTransaction[]> {
     return this.database.getTransactionsByType(
       transactionType,
+      signerAddress,
       limit,
       startTime,
       endTime
@@ -81,50 +90,64 @@ export class DatabaseQueryClient {
 
   // Get account statistics
   async getAccountStats(
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountStats[]> {
-    return this.database.getAccountStats(startTime, endTime);
+    return this.database.getAccountStats(signerAddress, startTime, endTime);
   }
 
   // Get Archway Bolt volume
   async getArchwayBoltVolume(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    return this.database.getArchwayBoltVolume(startTime, endTime);
+    return this.database.getArchwayBoltVolume(
+      signerAddress,
+      startTime,
+      endTime
+    );
   }
 
   // Get Osmosis volume
   async getOsmosisVolume(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    return this.database.getOsmosisVolume(startTime, endTime);
+    return this.database.getOsmosisVolume(signerAddress, startTime, endTime);
   }
 
   // Get bridge volume
   async getBridgeVolume(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    return this.database.getBridgeVolume(startTime, endTime);
+    return this.database.getBridgeVolume(signerAddress, startTime, endTime);
   }
 
   // Get profitability
   async getProfitability(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<ProfitabilityByToken[]> {
-    return this.database.getProfitability(startTime, endTime);
+    return this.database.getProfitability(signerAddress, startTime, endTime);
   }
 
   // Get transaction type summary
   async getTransactionTypeSummary(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<TransactionTypeSummary[]> {
-    return this.database.getTransactionTypeSummary(startTime, endTime);
+    return this.database.getTransactionTypeSummary(
+      signerAddress,
+      startTime,
+      endTime
+    );
   }
 
   // Format volume data for display
@@ -221,7 +244,12 @@ export class DatabaseQueryClient {
   }
 
   // Get all statistics in a formatted report
-  async getFullReport(startTime?: Date, endTime?: Date): Promise<string> {
+  async getFullReport(
+    signerAddress?: string,
+    startTime?: Date,
+    endTime?: Date
+  ): Promise<string> {
+    const address = signerAddress || this.osmosisAddress;
     const [
       accountStats,
       archwayVolume,
@@ -230,12 +258,12 @@ export class DatabaseQueryClient {
       profitability,
       transactionSummary,
     ] = await Promise.all([
-      this.getAccountStats(startTime, endTime),
-      this.getArchwayBoltVolume(startTime, endTime),
-      this.getOsmosisVolume(startTime, endTime),
-      this.getBridgeVolume(startTime, endTime),
-      this.getProfitability(startTime, endTime),
-      this.getTransactionTypeSummary(startTime, endTime),
+      this.getAccountStats(address, startTime, endTime),
+      this.getArchwayBoltVolume(address, startTime, endTime),
+      this.getOsmosisVolume(address, startTime, endTime),
+      this.getBridgeVolume(address, startTime, endTime),
+      this.getProfitability(address, startTime, endTime),
+      this.getTransactionTypeSummary(address, startTime, endTime),
     ]);
 
     let report = "📊 Account Activity Report\n";
@@ -347,6 +375,7 @@ export class DatabaseQueryClient {
   // Export volume data to CSV
   async exportVolumeToCSV(
     volumeType: "archway" | "osmosis" | "bridge" | "all",
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<string[]> {
@@ -354,7 +383,11 @@ export class DatabaseQueryClient {
     const exportedFiles: string[] = [];
 
     if (volumeType === "all" || volumeType === "archway") {
-      const archwayVolume = await this.getArchwayBoltVolume(startTime, endTime);
+      const archwayVolume = await this.getArchwayBoltVolume(
+        signerAddress,
+        startTime,
+        endTime
+      );
       const filename = this.generateReportFilename(
         "archway_volume",
         startTime,
@@ -374,7 +407,11 @@ export class DatabaseQueryClient {
     }
 
     if (volumeType === "all" || volumeType === "osmosis") {
-      const osmosisVolume = await this.getOsmosisVolume(startTime, endTime);
+      const osmosisVolume = await this.getOsmosisVolume(
+        signerAddress,
+        startTime,
+        endTime
+      );
       const filename = this.generateReportFilename(
         "osmosis_volume",
         startTime,
@@ -394,7 +431,11 @@ export class DatabaseQueryClient {
     }
 
     if (volumeType === "all" || volumeType === "bridge") {
-      const bridgeVolume = await this.getBridgeVolume(startTime, endTime);
+      const bridgeVolume = await this.getBridgeVolume(
+        signerAddress,
+        startTime,
+        endTime
+      );
       const filename = this.generateReportFilename(
         "bridge_volume",
         startTime,
@@ -418,11 +459,16 @@ export class DatabaseQueryClient {
 
   // Export profitability to CSV
   async exportProfitabilityToCSV(
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<string> {
     const reportsDir = await this.ensureReportsDirectory();
-    const profitability = await this.getProfitability(startTime, endTime);
+    const profitability = await this.getProfitability(
+      signerAddress,
+      startTime,
+      endTime
+    );
     const filename = this.generateReportFilename(
       "profitability",
       startTime,
@@ -443,6 +489,7 @@ export class DatabaseQueryClient {
 
   // Export transactions to CSV
   async exportTransactionsToCSV(
+    signerAddress?: string,
     limit: number = 1000,
     transactionType?: TransactionType,
     startTime?: Date,
@@ -456,6 +503,7 @@ export class DatabaseQueryClient {
     if (transactionType) {
       transactions = await this.getTransactionsByType(
         transactionType,
+        signerAddress,
         limit,
         startTime,
         endTime
@@ -463,6 +511,7 @@ export class DatabaseQueryClient {
       reportType = `transactions_${transactionType}`;
     } else {
       transactions = await this.getRecentTransactions(
+        signerAddress,
         limit,
         0,
         startTime,
@@ -507,11 +556,16 @@ export class DatabaseQueryClient {
 
   // Export transaction summary to CSV
   async exportTransactionSummaryToCSV(
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<string> {
     const reportsDir = await this.ensureReportsDirectory();
-    const summary = await this.getTransactionTypeSummary(startTime, endTime);
+    const summary = await this.getTransactionTypeSummary(
+      signerAddress,
+      startTime,
+      endTime
+    );
     const filename = this.generateReportFilename(
       "transaction_summary",
       startTime,
@@ -534,21 +588,32 @@ export class DatabaseQueryClient {
 
   // Export complete report to multiple CSV files
   async exportFullReportToCSV(
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<string[]> {
     const exportedFiles: string[] = [];
 
     // Export all volume data
-    const volumeFiles = await this.exportVolumeToCSV("all", startTime, endTime);
+    const volumeFiles = await this.exportVolumeToCSV(
+      "all",
+      signerAddress,
+      startTime,
+      endTime
+    );
     exportedFiles.push(...volumeFiles);
 
     // Export profitability
-    const profitFile = await this.exportProfitabilityToCSV(startTime, endTime);
+    const profitFile = await this.exportProfitabilityToCSV(
+      signerAddress,
+      startTime,
+      endTime
+    );
     exportedFiles.push(profitFile);
 
     // Export transaction summary
     const summaryFile = await this.exportTransactionSummaryToCSV(
+      signerAddress,
       startTime,
       endTime
     );
@@ -556,6 +621,7 @@ export class DatabaseQueryClient {
 
     // Export recent transactions (last 1000)
     const txFile = await this.exportTransactionsToCSV(
+      signerAddress,
       1000,
       undefined,
       startTime,
@@ -564,7 +630,11 @@ export class DatabaseQueryClient {
     exportedFiles.push(txFile);
 
     // Export account stats
-    const statsFile = await this.exportAccountStatsToCSV(startTime, endTime);
+    const statsFile = await this.exportAccountStatsToCSV(
+      signerAddress,
+      startTime,
+      endTime
+    );
     exportedFiles.push(statsFile);
 
     return exportedFiles;
@@ -572,11 +642,12 @@ export class DatabaseQueryClient {
 
   // Export account stats to CSV
   async exportAccountStatsToCSV(
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): Promise<string> {
     const reportsDir = await this.ensureReportsDirectory();
-    const stats = await this.getAccountStats(startTime, endTime);
+    const stats = await this.getAccountStats(signerAddress, startTime, endTime);
     const filename = this.generateReportFilename(
       "account_stats",
       startTime,
