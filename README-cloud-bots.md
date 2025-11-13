@@ -86,3 +86,5 @@ Then click on `Explore`.
 
 After that, find the button that says `Select label`, and after clicking it, select `app_kubernetes_io_instance`
 Next to it, there is another button that says `Select value`, click it, and select your bot (by its name).
+
+Finally, click on the `Run query` button at the top right, and you should see the latest logs of your bot
