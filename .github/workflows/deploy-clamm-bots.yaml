@@ -57,19 +57,17 @@ jobs:
                 repo: context.repo.repo
               });
               
-              // Filter only clamm-bot environments
-              const clammBotEnvs = environments.environments
-                .filter(env => env.name.startsWith('clamm-bot-'))
-                .map(env => env.name);
+              // Get ALL environments
+              const allEnvs = environments.environments.map(env => env.name);
               
-              console.log('Available CLAMM bot environments:', clammBotEnvs);
+              console.log('Available GitHub environments:', allEnvs);
               
-              if (clammBotEnvs.length === 0) {
-                core.setFailed('No CLAMM bot environments found. Please create at least one clamm-bot-* environment.');
+              if (allEnvs.length === 0) {
+                core.setFailed('No GitHub environments found. Please create at least one environment.');
                 return;
               }
               
-              core.setOutput('github_environments', JSON.stringify(clammBotEnvs));
+              core.setOutput('github_environments', JSON.stringify(allEnvs));
             } catch (error) {
               core.setFailed(`Failed to fetch GitHub environments: ${error.message}`);
             }
@@ -115,9 +113,9 @@ jobs:
               exit 1
             fi
           else
-            # Deploy all clamm-bot environments
+            # Deploy all environments
             VALID_ENVS=($(echo "$GITHUB_ENVS" | jq -r '.[]'))
-            echo "No specific environments requested - will process all CLAMM bot environments"
+            echo "No specific environments requested - will process all environments"
           fi
 
           # Save valid environments
@@ -397,53 +395,70 @@ jobs:
         env:
           NAMESPACE: bolt-prod
         run: |
-          echo "# 📊 CLAMM Bot Deployment Summary"
+          echo "# 📊 Deployment Summary"
           echo ""
           echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`"
           echo "**Deployment Type:** ${{ needs.setup.outputs.deployment_type }}"
           echo ""
           
-          # Get all clamm-bot deployments
-          echo "## All CLAMM Bot Deployments:"
+          # Get all deployments managed by this workflow
+          echo "## All Managed Deployments:"
           echo ""
-          echo "| Bot Name | Status | Replicas | Image Tag | Last Updated |"
-          echo "|----------|--------|----------|-----------|--------------|"
+          echo "| Environment | Status | Replicas | Image Tag | Last Updated |"
+          echo "|-------------|--------|----------|-----------|--------------|"
           
-          kubectl get deployments -n $NAMESPACE -o json | \
-            jq -r '.items[] | 
-              select(.kind == "Deployment" // true) |
-              select(.metadata.name | startswith("clamm-bot-")) | 
-              {
-                name: .metadata.name,
-                replicas: .spec.replicas,
-                image_tag: (.spec.template.spec.containers[0].image | split(":")[1] // "unknown"),
-                enabled: (.metadata.labels.enabled // "true"),
-                updated: (.metadata.annotations."disabled-at" // .metadata.creationTimestamp)
-              } | 
-              "| \(.name) | \(if .replicas == 0 then "⏸️ Stopped" else "✅ Running" end) | \(.replicas) | \(.image_tag) | \(.updated) |"'
+          # Get all deployments
+          DEPLOYMENTS_JSON=$(kubectl get deployments -n $NAMESPACE -o json)
+          
+          # Get list of environments we manage
+          VALID_ENVS='${{ needs.setup.outputs.environments }}'
+          
+          # Process each environment
+          echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
+            # Check if deployment exists
+            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\")")
+            
+            if [ -n "$DEPLOYMENT" ]; then
+              REPLICAS=$(echo "$DEPLOYMENT" | jq -r '.spec.replicas')
+              IMAGE_TAG=$(echo "$DEPLOYMENT" | jq -r '.spec.template.spec.containers[0].image | split(":")[1] // "unknown"')
+              UPDATED=$(echo "$DEPLOYMENT" | jq -r '.metadata.annotations."disabled-at" // .metadata.creationTimestamp')
+              STATUS=$([ "$REPLICAS" -eq "0" ] && echo "⏸️ Stopped" || echo "✅ Running")
+              
+              echo "| $env_name | $STATUS | $REPLICAS | $IMAGE_TAG | $UPDATED |"
+            else
+              echo "| $env_name | ❌ Not Found | - | - | - |"
+            fi
+          done
           
           echo ""
           echo "## Summary:"
           
-          DEPLOYMENTS_JSON=$(kubectl get deployments -n $NAMESPACE -o json)
+          # Count running and stopped deployments from our managed list
+          RUNNING=0
+          STOPPED=0
+          NOT_FOUND=0
           
-          RUNNING=$(echo "$DEPLOYMENTS_JSON" | jq '[
-            .items[] | 
-            select(.kind == "Deployment" // true) |
-            select(.metadata.name | startswith("clamm-bot-")) |
-            select(.spec.replicas > 0)
-          ] | length')
+          echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
+            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\")")
+            
+            if [ -n "$DEPLOYMENT" ]; then
+              REPLICAS=$(echo "$DEPLOYMENT" | jq -r '.spec.replicas')
+              if [ "$REPLICAS" -eq "0" ]; then
+                STOPPED=$((STOPPED + 1))
+              else
+                RUNNING=$((RUNNING + 1))
+              fi
+            else
+              NOT_FOUND=$((NOT_FOUND + 1))
+            fi
+          done | tail -1  # Get final counts
           
-          STOPPED=$(echo "$DEPLOYMENTS_JSON" | jq '[
-            .items[] |
-            select(.kind == "Deployment" // true) |
-            select(.metadata.name | startswith("clamm-bot-")) |
-            select(.spec.replicas == 0)
-          ] | length')
+          TOTAL=$(echo "$VALID_ENVS" | jq -r '. | length')
           
-          echo "- Running bots: $RUNNING"
-          echo "- Stopped bots: $STOPPED"
-          echo "- Total bots: $((RUNNING + STOPPED))"
+          echo "- Total environments: $TOTAL"
+          echo "- Running deployments: $RUNNING"
+          echo "- Stopped deployments: $STOPPED"
+          echo "- Not deployed: $NOT_FOUND"
           echo ""
           
           if [ "${{ needs.setup.outputs.deployment_type }}" == "automatic" ]; then
