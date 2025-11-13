@@ -78,3 +78,11 @@ The deployment workflow outputs a summary table showing:
 - Last update time
 
 To see this info, click on the deployment, then click on the summary box, then expand the `Generate deployment summary` option
+
+# How to see Logs
+To see the logs of your bot, login to https://08fa.grafana.archway.io/login
+
+Then click on `Explore`.
+
+After that, find the button that says `Select label`, and after clicking it, select `app_kubernetes_io_instance`
+Next to it, there is another button that says `Select value`, click it, and select your bot (by its name).
