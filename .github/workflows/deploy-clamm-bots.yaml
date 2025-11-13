@@ -1,0 +1,451 @@
+name: Deploy CLAMM Bots
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy (e.g., sha-abc1234, v1.0.0, latest)"
+        required: true
+        type: string
+        default: "latest"
+      environments:
+        description: "Comma-separated list of environments (empty = all bots)"
+        required: false
+        default: ""
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: shared-gke-nonprod
+  GKE_REGION: us-central1
+  HELM_CHART_PATH: ./charts
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.output-matrix.outputs.environments }}
+      deployment_type: ${{ steps.determine-type.outputs.type }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment request
+        run: |
+          echo "🔍 Will deploy image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}"
+          
+          # If using 'latest' tag, show warning
+          if [ "${{ github.event.inputs.image_tag }}" == "latest" ]; then
+            echo "⚠️  Using 'latest' tag - this will deploy the most recent release"
+          fi
+
+      - name: Get available environments from GitHub
+        id: get-github-envs
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              const { data: environments } = await github.rest.repos.getAllEnvironments({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              
+              // Filter only clamm-bot environments
+              const clammBotEnvs = environments.environments
+                .filter(env => env.name.startsWith('clamm-bot-'))
+                .map(env => env.name);
+              
+              console.log('Available CLAMM bot environments:', clammBotEnvs);
+              
+              if (clammBotEnvs.length === 0) {
+                core.setFailed('No CLAMM bot environments found. Please create at least one clamm-bot-* environment.');
+                return;
+              }
+              
+              core.setOutput('github_environments', JSON.stringify(clammBotEnvs));
+            } catch (error) {
+              core.setFailed(`Failed to fetch GitHub environments: ${error.message}`);
+            }
+
+      - name: Determine environments to deploy
+        id: determine-envs
+        run: |
+          set -euo pipefail
+          
+          GITHUB_ENVS='${{ steps.get-github-envs.outputs.github_environments }}'
+          
+          if [ -z "$GITHUB_ENVS" ] || [ "$GITHUB_ENVS" = "null" ]; then
+            echo "::error::No GitHub environments data available"
+            exit 1
+          fi
+          
+          echo "GitHub CLAMM bot environments: $GITHUB_ENVS"
+
+          # Determine which environments to deploy
+          if [ -n "${{ github.event.inputs.environments }}" ]; then
+            # Use specified environments
+            REQUESTED_ENVS="${{ github.event.inputs.environments }}"
+            IFS=',' read -ra ENVS_ARRAY <<< "$REQUESTED_ENVS"
+            
+            # Validate requested environments exist
+            VALID_ENVS=()
+            INVALID_ENVS=()
+            for env in "${ENVS_ARRAY[@]}"; do
+              env=$(echo "$env" | xargs) # Trim whitespace
+              if echo "$GITHUB_ENVS" | jq -e ".[] | select(. == \"$env\")" > /dev/null 2>&1; then
+                VALID_ENVS+=("$env")
+                echo "✅ $env: Found in GitHub environments"
+              else
+                INVALID_ENVS+=("$env")
+                echo "❌ $env: Not found in GitHub environments"
+              fi
+            done
+            
+            # If any requested environment is invalid, fail
+            if [ ${#INVALID_ENVS[@]} -gt 0 ]; then
+              echo "::error::Invalid environments requested: ${INVALID_ENVS[*]}"
+              echo "::error::Available environments are: $(echo "$GITHUB_ENVS" | jq -r '.[]' | tr '\n' ' ')"
+              exit 1
+            fi
+          else
+            # Deploy all clamm-bot environments
+            VALID_ENVS=($(echo "$GITHUB_ENVS" | jq -r '.[]'))
+            echo "No specific environments requested - will process all CLAMM bot environments"
+          fi
+
+          # Save valid environments
+          if [ ${#VALID_ENVS[@]} -eq 0 ]; then
+            echo "::error::No valid environments found to deploy"
+            exit 1
+          fi
+
+          printf '%s\n' "${VALID_ENVS[@]}" > valid-envs.txt
+          echo "Total environments to process: ${#VALID_ENVS[@]}"
+
+      - name: Validate DATABASE_URL repository secret exists
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::error::DATABASE_URL repository secret not found"
+            echo "Please add the DATABASE_URL secret to the repository secrets"
+            exit 1
+          fi
+          echo "✅ DATABASE_URL repository secret found"
+
+      - name: Create matrix output
+        id: output-matrix
+        run: |
+          set -euo pipefail
+          
+          if [ ! -f valid-envs.txt ]; then
+            echo "::error::valid-envs.txt file not found"
+            exit 1
+          fi
+          
+          VALID_ENVS=()
+          while IFS= read -r line; do
+            [ -n "$line" ] && VALID_ENVS+=("$line")
+          done < valid-envs.txt
+          
+          if [ ${#VALID_ENVS[@]} -eq 0 ]; then
+            echo "::error::No environments found in valid-envs.txt"
+            exit 1
+          fi
+          
+          # Create JSON array using jq with compact output
+          JSON=$(printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s -c .)
+          
+          # Validate JSON
+          if ! echo "$JSON" | jq . > /dev/null 2>&1; then
+            echo "::error::Failed to create valid JSON matrix"
+            exit 1
+          fi
+          
+          echo "Matrix JSON: $JSON"
+          
+          echo "environments<<EOF" >> $GITHUB_OUTPUT
+          echo "$JSON" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.setup.outputs.environments) }}
+      fail-fast: false
+    environment: ${{ matrix.environment }}
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if bot is enabled
+        id: check-enabled
+        run: |
+          ENABLED="${{ vars.ENABLED }}"
+          if [ -z "$ENABLED" ]; then
+            echo "ENABLED variable not set, defaulting to false"
+            ENABLED="false"
+          fi
+          
+          echo "ENABLED=$ENABLED" >> $GITHUB_OUTPUT
+          echo "Bot ${{ matrix.environment }} enabled: $ENABLED"
+
+      - name: Validate required variables and secrets
+        if: steps.check-enabled.outputs.ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          
+          CRITICAL_ERROR=false
+          
+          # Check secrets
+          if [ -z "${{ secrets.MNEMONIC }}" ]; then
+            echo "::error::MNEMONIC secret not found in environment ${{ matrix.environment }}"
+            CRITICAL_ERROR=true
+          else
+            echo "✅ MNEMONIC secret found"
+          fi
+
+          # Check variables
+          MISSING_VARS=()
+          
+          if [ -z "${{ vars.OSMOSIS_POOL_ID }}" ]; then
+            MISSING_VARS+=("OSMOSIS_POOL_ID")
+          fi
+          
+          if [ -z "${{ vars.REBALANCE_THRESHOLD_PERCENT }}" ]; then
+            MISSING_VARS+=("REBALANCE_THRESHOLD_PERCENT")
+          fi
+          
+          if [ -z "${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}" ]; then
+            MISSING_VARS+=("OSMOSIS_POSITION_BAND_PERCENTAGE")
+          fi
+          
+          if [ -z "${{ vars.WATCH_FREQUENCY }}" ]; then
+            MISSING_VARS+=("WATCH_FREQUENCY")
+          fi
+          
+          if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+            echo "::error::Missing required variables in environment ${{ matrix.environment }}: ${MISSING_VARS[*]}"
+            echo "::error::Please add these variables to the GitHub environment: ${{ matrix.environment }}"
+            CRITICAL_ERROR=true
+          fi
+          
+          if [ "$CRITICAL_ERROR" = "true" ]; then
+            echo "::error::Critical configuration errors found for ${{ matrix.environment }}"
+            exit 1
+          fi
+          
+          echo "✅ All required variables found"
+          echo "Configuration for ${{ matrix.environment }}:"
+          echo "  OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}"
+          echo "  REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}"
+          echo "  OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}"
+          echo "  WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY }}"
+
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "3.19.0"
+
+      - name: Deploy or stop bot based on ENABLED status
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          DEPLOYMENT_NAME: ${{ matrix.environment }}
+          NAMESPACE: bolt-prod
+          ENABLED: ${{ steps.check-enabled.outputs.ENABLED }}
+          # Repository secrets
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Environment secrets
+          MNEMONIC: ${{ secrets.MNEMONIC }}
+          # Environment variables
+          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
+          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+          WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY }}
+        run: |
+          if [ "$ENABLED" == "true" ]; then
+            echo "🚀 Deploying $DEPLOYMENT_NAME..."
+            echo "Using image tag: $IMAGE_TAG"
+            echo "Pool ID: $OSMOSIS_POOL_ID"
+            echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
+            echo "Position Band: $OSMOSIS_POSITION_BAND_PERCENTAGE%"
+            echo "Watch Frequency: $WATCH_FREQUENCY seconds"
+
+            # Base64 encode the values
+            export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
+            export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
+            export OSMOSIS_POOL_ID_B64=$(echo -n "$OSMOSIS_POOL_ID" | base64)
+            export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
+            export OSMOSIS_POSITION_BAND_PERCENTAGE_B64=$(echo -n "$OSMOSIS_POSITION_BAND_PERCENTAGE" | base64)
+            export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
+
+            # Deploy using Helm
+            helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
+              --namespace $NAMESPACE \
+              --create-namespace \
+              --set image.repository=${REGISTRY}/${IMAGE_NAME} \
+              --set image.tag=$IMAGE_TAG \
+              --set replicaCount=1 \
+              --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
+              --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
+              --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID_B64" \
+              --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
+              --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE_B64" \
+              --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
+              --values ./charts/values.yaml \
+              --wait --timeout 2m
+
+            echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
+            
+          else
+            echo "⏸️  Bot $DEPLOYMENT_NAME is disabled (ENABLED=$ENABLED)"
+            
+            # Check if deployment exists
+            if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
+              echo "Scaling down existing deployment to 0 replicas..."
+              
+              kubectl scale deployment $DEPLOYMENT_NAME --replicas=0 -n $NAMESPACE
+              
+              kubectl label deployment $DEPLOYMENT_NAME -n $NAMESPACE enabled=false --overwrite
+              kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE disabled-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+              kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE disabled-reason="ENABLED variable set to false" --overwrite
+              
+              echo "✅ Deployment scaled to 0 replicas (resources preserved)"
+            else
+              echo "ℹ️  No existing deployment found to stop"
+            fi
+          fi
+
+      - name: Verify deployment status
+        env:
+          NAMESPACE: bolt-prod
+        run: |
+          echo "Checking deployment status..."
+          if kubectl get deployment ${{ matrix.environment }} -n $NAMESPACE &> /dev/null; then
+            kubectl -n $NAMESPACE get deployment ${{ matrix.environment }}
+            
+            REPLICAS=$(kubectl get deployment ${{ matrix.environment }} -n $NAMESPACE -o jsonpath='{.spec.replicas}')
+            if [ "$REPLICAS" -eq "0" ]; then
+              echo "ℹ️  Deployment exists but is scaled to 0 (disabled)"
+            else
+              kubectl -n $NAMESPACE get pods -l app.kubernetes.io/instance=${{ matrix.environment }}
+            fi
+          else
+            echo "ℹ️  No deployment found (bot might be disabled)"
+          fi
+
+  summary:
+    needs: [deploy, setup]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check for critical failures
+        run: |
+          if [ "${{ needs.setup.result }}" == "failure" ]; then
+            echo "::error::Setup job failed - critical error in deployment"
+            exit 1
+          fi
+          
+          echo "✅ Setup completed successfully"
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+        
+      - name: Generate deployment summary
+        env:
+          NAMESPACE: bolt-prod
+        run: |
+          echo "# 📊 CLAMM Bot Deployment Summary"
+          echo ""
+          echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`"
+          echo "**Deployment Type:** ${{ needs.setup.outputs.deployment_type }}"
+          echo ""
+          
+          # Get all clamm-bot deployments
+          echo "## All CLAMM Bot Deployments:"
+          echo ""
+          echo "| Bot Name | Status | Replicas | Image Tag | Last Updated |"
+          echo "|----------|--------|----------|-----------|--------------|"
+          
+          kubectl get deployments -n $NAMESPACE -o json | \
+            jq -r '.items[] | 
+              select(.kind == "Deployment" // true) |
+              select(.metadata.name | startswith("clamm-bot-")) | 
+              {
+                name: .metadata.name,
+                replicas: .spec.replicas,
+                image_tag: (.spec.template.spec.containers[0].image | split(":")[1] // "unknown"),
+                enabled: (.metadata.labels.enabled // "true"),
+                updated: (.metadata.annotations."disabled-at" // .metadata.creationTimestamp)
+              } | 
+              "| \(.name) | \(if .replicas == 0 then "⏸️ Stopped" else "✅ Running" end) | \(.replicas) | \(.image_tag) | \(.updated) |"'
+          
+          echo ""
+          echo "## Summary:"
+          
+          DEPLOYMENTS_JSON=$(kubectl get deployments -n $NAMESPACE -o json)
+          
+          RUNNING=$(echo "$DEPLOYMENTS_JSON" | jq '[
+            .items[] | 
+            select(.kind == "Deployment" // true) |
+            select(.metadata.name | startswith("clamm-bot-")) |
+            select(.spec.replicas > 0)
+          ] | length')
+          
+          STOPPED=$(echo "$DEPLOYMENTS_JSON" | jq '[
+            .items[] |
+            select(.kind == "Deployment" // true) |
+            select(.metadata.name | startswith("clamm-bot-")) |
+            select(.spec.replicas == 0)
+          ] | length')
+          
+          echo "- Running bots: $RUNNING"
+          echo "- Stopped bots: $STOPPED"
+          echo "- Total bots: $((RUNNING + STOPPED))"
+          echo ""
+          
+          if [ "${{ needs.setup.outputs.deployment_type }}" == "automatic" ]; then
+            echo "🤖 *This deployment was automatically triggered by a build workflow*"
+          fi
