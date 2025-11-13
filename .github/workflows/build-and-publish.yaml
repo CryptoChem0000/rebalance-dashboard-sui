@@ -5,17 +5,6 @@ on:
     tags:
       - "v*"
 
-  workflow_dispatch:
-    inputs:
-      trigger_deploy:
-        description: "Trigger deployment after successful build"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -55,8 +44,6 @@ jobs:
             type=sha,format=short,prefix=sha-
             # Latest tag (always, since we only build on releases)
             type=raw,value=latest
-            # If manually triggered, add 'manual' prefix to SHA
-            type=sha,format=short,prefix=manual-,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -89,16 +76,14 @@ jobs:
           echo "**Primary Tag:** \`${{ steps.meta.outputs.version }}\`"
           echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
           echo ""
-          
+
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "**Version:** \`${{ github.ref_name }}\`"
           fi
 
   trigger-deploy:
     needs: build-and-push
-    if: |
-      success() && 
-      (github.ref_type == 'tag' || github.event.inputs.trigger_deploy == 'true')
+    if: success()
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -112,38 +97,42 @@ jobs:
         id: determine-envs
         run: |
           # For tags (releases), deploy all bots
-          # For manual/branch builds, allow selective deployment
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "DEPLOY_ENVS=" >> $GITHUB_OUTPUT
-            echo "Deploying all environments for tag release"
-          else
-            echo "DEPLOY_ENVS=" >> $GITHUB_OUTPUT
-            echo "Deploying all environments for branch build"
-          fi
+          echo "DEPLOY_ENVS=" >> $GITHUB_OUTPUT
+          echo "Deploying all environments for tag release"
 
       - name: Trigger deployment workflow
         uses: actions/github-script@v6
+        continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const tag = '${{ needs.build-and-push.outputs.image_tag }}';
             const environments = '${{ steps.determine-envs.outputs.DEPLOY_ENVS }}';
-            
-            console.log(`Triggering deployment with image tag: ${tag}`);
-            
-            const result = await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-clamm-bots.yml',
-              ref: context.ref,
-              inputs: {
-                image_tag: tag,
-                environments: environments
-              }
-            });
-            
-            console.log('Deployment workflow triggered successfully');
-            
-            // Output the run URL (estimated)
-            const workflowUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy-clamm-bots.yml`;
-            console.log(`Monitor deployments at: ${workflowUrl}`);
+
+            console.log(`Attempting to trigger deployment with image tag: ${tag}`);
+
+            try {
+              const result = await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-clamm-bots.yaml',
+                ref: context.ref,
+                inputs: {
+                  image_tag: tag,
+                  environments: environments
+                }
+              });
+              
+              console.log('✅ Deployment workflow triggered successfully');
+              
+              // Output the run URL (estimated)
+              const workflowUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy-clamm-bots.yml`;
+              console.log(`Monitor deployments at: ${workflowUrl}`);
+            } catch (error) {
+              console.log('⚠️ Failed to trigger deployment workflow');
+              console.log(`Error: ${error.message}`);
+              
+              // Don't fail the build job
+              core.notice('Deployment trigger failed but build completed successfully');
+            }
+
