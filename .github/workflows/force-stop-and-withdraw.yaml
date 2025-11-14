@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bot_name:
-        description: 'Name of the bot to stop and withdraw (e.g., clamm-bot-1)'
+        description: 'Name of the bot to withdraw (e.g., clamm-bot-1)'
         required: true
         type: string
       confirmation:
