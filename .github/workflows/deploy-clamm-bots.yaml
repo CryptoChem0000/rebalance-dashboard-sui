@@ -323,17 +323,25 @@ jobs:
           else
             echo "⏸️  Bot $DEPLOYMENT_NAME is disabled (ENABLED=$ENABLED)"
             
-            # Check if deployment exists
+            # Check if deployment exists (try both naming patterns)
+            FOUND_DEPLOYMENT=""
+            
             if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
-              echo "Scaling down existing deployment to 0 replicas..."
+              FOUND_DEPLOYMENT=$DEPLOYMENT_NAME
+            elif kubectl get deployment ${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
+              FOUND_DEPLOYMENT=${DEPLOYMENT_NAME}-clamm-bot
+            fi
+            
+            if [ -n "$FOUND_DEPLOYMENT" ]; then
+              echo "Scaling down existing deployment $FOUND_DEPLOYMENT to 0 replicas..."
               
-              kubectl scale deployment $DEPLOYMENT_NAME --replicas=0 -n $NAMESPACE
+              kubectl scale deployment $FOUND_DEPLOYMENT --replicas=0 -n $NAMESPACE
               
-              kubectl label deployment $DEPLOYMENT_NAME -n $NAMESPACE enabled=false --overwrite
-              kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE disabled-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
-              kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE disabled-reason="ENABLED variable set to false" --overwrite
+              kubectl label deployment $FOUND_DEPLOYMENT -n $NAMESPACE enabled=false --overwrite
+              kubectl annotate deployment $FOUND_DEPLOYMENT -n $NAMESPACE disabled-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+              kubectl annotate deployment $FOUND_DEPLOYMENT -n $NAMESPACE disabled-reason="ENABLED variable set to false" --overwrite
               
-              echo "✅ Deployment scaled to 0 replicas (resources preserved)"
+              echo "✅ Deployment $FOUND_DEPLOYMENT scaled to 0 replicas (resources preserved)"
             else
               echo "ℹ️  No existing deployment found to stop"
             fi
@@ -344,13 +352,31 @@ jobs:
           NAMESPACE: bolt-prod
         run: |
           echo "Checking deployment status..."
-          if kubectl get deployment ${{ matrix.environment }} -n $NAMESPACE &> /dev/null; then
-            kubectl -n $NAMESPACE get deployment ${{ matrix.environment }}
+          
+          # Try both possible deployment names
+          DEPLOYMENT_NAME="${{ matrix.environment }}"
+          ALT_DEPLOYMENT_NAME="${{ matrix.environment }}-clamm-bot"
+          
+          FOUND_DEPLOYMENT=""
+          
+          # Check standard name first
+          if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
+            FOUND_DEPLOYMENT=$DEPLOYMENT_NAME
+          # Check with -clamm-bot suffix
+          elif kubectl get deployment $ALT_DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
+            FOUND_DEPLOYMENT=$ALT_DEPLOYMENT_NAME
+          fi
+          
+          if [ -n "$FOUND_DEPLOYMENT" ]; then
+            echo "✅ Found deployment: $FOUND_DEPLOYMENT"
+            kubectl -n $NAMESPACE get deployment $FOUND_DEPLOYMENT
             
-            REPLICAS=$(kubectl get deployment ${{ matrix.environment }} -n $NAMESPACE -o jsonpath='{.spec.replicas}')
+            REPLICAS=$(kubectl get deployment $FOUND_DEPLOYMENT -n $NAMESPACE -o jsonpath='{.spec.replicas}')
             if [ "$REPLICAS" -eq "0" ]; then
               echo "ℹ️  Deployment exists but is scaled to 0 (disabled)"
             else
+              echo ""
+              echo "Pod status:"
               kubectl -n $NAMESPACE get pods -l app.kubernetes.io/instance=${{ matrix.environment }}
             fi
           else
@@ -415,10 +441,11 @@ jobs:
           
           # Process each environment
           echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
-            # Check if deployment exists
-            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\")")
+            # Check if deployment exists (try both naming patterns)
+            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\" or .metadata.name == \"${env_name}-clamm-bot\")")
             
             if [ -n "$DEPLOYMENT" ]; then
+              DEPLOYMENT_NAME=$(echo "$DEPLOYMENT" | jq -r '.metadata.name')
               REPLICAS=$(echo "$DEPLOYMENT" | jq -r '.spec.replicas')
               IMAGE_TAG=$(echo "$DEPLOYMENT" | jq -r '.spec.template.spec.containers[0].image | split(":")[1] // "unknown"')
               UPDATED=$(echo "$DEPLOYMENT" | jq -r '.metadata.annotations."disabled-at" // .metadata.creationTimestamp')
@@ -439,7 +466,7 @@ jobs:
           NOT_FOUND=0
           
           echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
-            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\")")
+            DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\" or .metadata.name == \"${env_name}-clamm-bot\")")
             
             if [ -n "$DEPLOYMENT" ]; then
               REPLICAS=$(echo "$DEPLOYMENT" | jq -r '.spec.replicas')
