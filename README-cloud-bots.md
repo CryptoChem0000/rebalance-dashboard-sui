@@ -22,13 +22,6 @@ For each bot (e.g., `clamm-bot-1`, `clamm-bot-2`), you need to create a GitHub E
 
 ### Visual Representation
 ```
-Pool Price Range: $1.00 ←───────────────────────────────────────→ $2.00
-                        │                   ↑                   │
-                        │              Current Price            │
-                        │                 $1.50                 │
-                        └───────────────────────────────────────┘
-                                    Full Range
-
 With OSMOSIS_POSITION_BAND_PERCENTAGE = 10:
 
 Position Range:           $1.35 ←─────────────────────→ $1.65
