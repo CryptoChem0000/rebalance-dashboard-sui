@@ -139,6 +139,16 @@ The deployment workflow outputs a summary table showing:
 
 To see this info, click on the deployment, then click on the summary box, then expand the `Generate deployment summary` option
 
+### Force stop and withdraw
+To trigger a forceful stop of the bot, and then withdraw the current position by the bot, you can:
+1. Go to Actions → Force Stop Bot and Withdraw → Run workflow
+2. Enter:
+   - `environment`: Name of the bot/environment to stop (e.g., `clamm-bot-1`)
+   - `CONFIRM`: To confirm that you want to stop and withdraw, just type CONFIRM in this option
+3. Click "Run workflow"
+
+To make sure the bot will not be later restarted by accident, make sure you also update the environment variable `ENABLED` to `false`
+
 # How to see Logs
 To see the logs of your bot, login to https://08fa.grafana.archway.io/login (credentials available on 1password)
 
