@@ -1,10 +1,10 @@
-name: Force Stop a Bot and Withdraw
+name: Withdraw Bot
 
 on:
   workflow_dispatch:
     inputs:
       bot_name:
-        description: 'Name of the bot to withdraw (e.g., arbitrum-one-pendle)'
+        description: 'Name of the bot to withdraw (e.g., clamm-bot-1)'
         required: true
         type: string
       confirmation:
@@ -27,6 +27,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+      actions: read
+      deployments: write
     
     steps:
       - name: Validate confirmation
@@ -43,27 +45,12 @@ jobs:
 
       - name: Validate bot environment exists
         id: validate-env
-        uses: actions/github-script@v6
-        with:
-          script: |
-            try {
-              const { data: environments } = await github.rest.repos.getAllEnvironments({
-                owner: context.repo.owner,
-                repo: context.repo.repo
-              });
-              
-              const botName = '${{ github.event.inputs.bot_name }}';
-              const envExists = environments.environments.some(env => env.name === botName);
-              
-              if (!envExists) {
-                core.setFailed(`Environment '${botName}' does not exist. Available environments: ${environments.environments.map(e => e.name).join(', ')}`);
-                return;
-              }
-              
-              console.log(`✅ Environment '${botName}' found`);
-            } catch (error) {
-              core.setFailed(`Failed to validate environment: ${error.message}`);
-            }
+        run: |
+          # Since we're using environment: ${{ github.event.inputs.bot_name }}
+          # GitHub will validate the environment exists when the job starts
+          # If it doesn't exist, the job will fail with a clear error
+          echo "✅ Using environment: ${{ github.event.inputs.bot_name }}"
+          echo "If this environment doesn't exist, the job will fail automatically"
 
       - name: Validate required secrets and variables
         run: |
@@ -71,9 +58,15 @@ jobs:
           
           echo "Validating configuration for ${{ github.event.inputs.bot_name }}..."
           
-          # Check repository secret
+          # Check repository secrets
           if [ -z "${{ secrets.DATABASE_URL }}" ]; then
             echo "::error::DATABASE_URL repository secret not found"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.WORKFLOW_PAT }}" ]; then
+            echo "::error::WORKFLOW_PAT repository secret not found. This is required to update environment variables."
+            echo "::error::Please create a fine-grained PAT with 'Administration: Write' permission and add it as WORKFLOW_PAT secret"
             exit 1
           fi
           
@@ -319,6 +312,7 @@ jobs:
       - name: Update ENABLED environment variable
         uses: actions/github-script@v6
         with:
+          github-token: ${{ secrets.WORKFLOW_PAT }}
           script: |
             try {
               const environmentName = '${{ github.event.inputs.bot_name }}';
