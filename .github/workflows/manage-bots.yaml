@@ -1,0 +1,170 @@
+name: Manual Bot Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - stop
+          - start
+          - restart
+          - delete
+          - info
+      bot-names:
+        description: 'Bot names (comma-separated, e.g., clamm-bot-1,clamm-bot-2)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "CONFIRM" to execute the action'
+        required: true
+        type: string
+  push:
+    branches:
+      - chore/kill-bot
+
+env:
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: shared-gke-nonprod
+  GKE_REGION: us-central1
+  NAMESPACE: bolt-prod
+
+jobs:
+  manage-bots:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        if: github.event.inputs.confirm != 'CONFIRM'
+        run: |
+          echo "❌ Action not confirmed. Please type 'CONFIRM' to execute."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup gcloud CLI
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "3.19.0"
+
+      - name: Execute bot management action
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          BOT_NAMES: ${{ github.event.inputs.bot-names }}
+        run: |
+          echo "🤖 Bot Management Action: $ACTION"
+          echo "📋 Target bots: $BOT_NAMES"
+          echo "================================"
+          
+          # Convert comma-separated list to array
+          IFS=',' read -ra BOTS <<< "$BOT_NAMES"
+          
+          for bot in "${BOTS[@]}"; do
+            bot=$(echo "$bot" | xargs) # Trim whitespace
+            echo ""
+            echo "Processing: $bot"
+            echo "-------------------"
+            
+            case "$ACTION" in
+              stop)
+                echo "⏸️  Stopping $bot..."
+                if kubectl get deployment $bot -n $NAMESPACE >/dev/null 2>&1; then
+                  kubectl scale deployment $bot --replicas=0 -n $NAMESPACE
+                  kubectl annotate deployment $bot -n $NAMESPACE stopped-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+                  kubectl annotate deployment $bot -n $NAMESPACE stopped-by="${{ github.actor }}" --overwrite
+                  echo "✅ Bot stopped successfully"
+                else
+                  echo "⚠️  Deployment not found"
+                fi
+                ;;
+                
+              start)
+                echo "▶️  Starting $bot..."
+                if kubectl get deployment $bot -n $NAMESPACE >/dev/null 2>&1; then
+                  kubectl scale deployment $bot --replicas=1 -n $NAMESPACE
+                  kubectl annotate deployment $bot -n $NAMESPACE started-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+                  kubectl annotate deployment $bot -n $NAMESPACE started-by="${{ github.actor }}" --overwrite
+                  echo "✅ Bot started successfully"
+                else
+                  echo "⚠️  Deployment not found"
+                fi
+                ;;
+                
+              restart)
+                echo "🔄 Restarting $bot..."
+                if kubectl get deployment $bot -n $NAMESPACE >/dev/null 2>&1; then
+                  kubectl rollout restart deployment $bot -n $NAMESPACE
+                  kubectl annotate deployment $bot -n $NAMESPACE restarted-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+                  kubectl annotate deployment $bot -n $NAMESPACE restarted-by="${{ github.actor }}" --overwrite
+                  echo "✅ Bot restarted successfully"
+                else
+                  echo "⚠️  Deployment not found"
+                fi
+                ;;
+                
+              delete)
+                echo "⏹️  Scaling $bot to 0 instances..."
+                if kubectl get deployment $bot -n $NAMESPACE >/dev/null 2>&1; then
+                  # Scale to 0 instead of deleting
+                  kubectl scale deployment $bot --replicas=0 -n $NAMESPACE
+                  kubectl annotate deployment $bot -n $NAMESPACE scaled-to-zero-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+                  kubectl annotate deployment $bot -n $NAMESPACE scaled-to-zero-by="${{ github.actor }}" --overwrite
+                  kubectl label deployment $bot -n $NAMESPACE stopped-by-manual-action=true --overwrite
+                  
+                  echo "✅ Bot scaled to 0 instances (deployment preserved)"
+                  
+                  # Show current status
+                  echo ""
+                  echo "Current status:"
+                  kubectl get deployment $bot -n $NAMESPACE
+                else
+                  echo "⚠️  Deployment not found"
+                fi
+                ;;
+                
+              info)
+                echo "ℹ️  Getting info for $bot..."
+                if kubectl get deployment $bot -n $NAMESPACE >/dev/null 2>&1; then
+                  echo "Deployment:"
+                  kubectl get deployment $bot -n $NAMESPACE -o wide
+                  
+                  echo ""
+                  echo "Pods:"
+                  kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=$bot
+                  
+                  echo ""
+                  echo "Annotations:"
+                  kubectl get deployment $bot -n $NAMESPACE -o jsonpath='{.metadata.annotations}' | jq .
+                  
+                  echo ""
+                  echo "Recent Events:"
+                  kubectl get events -n $NAMESPACE --field-selector involvedObject.name=$bot --sort-by='.lastTimestamp' | tail -5
+                else
+                  echo "⚠️  Deployment not found"
+                fi
+                ;;
+            esac
+          done
+          
+          echo ""
+          echo "✅ Action completed for all specified bots"
