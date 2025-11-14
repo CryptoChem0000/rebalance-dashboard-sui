@@ -577,6 +577,8 @@ export class LiquidityManager {
       this.osmosisSigner
     );
 
+    await this.withdrawUnknownPositions(pool, this.config.osmosisPosition.id);
+
     const osmosisBalances = await this.getOsmosisAccountBalances();
 
     assertEnoughBalanceForFees(
