@@ -209,27 +209,43 @@ jobs:
           # Create a unique job name
           JOB_NAME="${BOT_NAME}-withdraw-$(date +%s)"
           
+          # Create a unique secret name for this withdrawal job
+          WITHDRAWAL_SECRET_NAME="${JOB_NAME}-secrets"
+          
+          echo "Creating fresh secrets for withdrawal job with current GitHub env values..."
+          echo "Secret name: $WITHDRAWAL_SECRET_NAME"
+          
+          kubectl create secret generic $WITHDRAWAL_SECRET_NAME \
+            --namespace=$NAMESPACE \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=MNEMONIC="$MNEMONIC" \
+            --from-literal=OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --from-literal=REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+            --from-literal=OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE"
+          
+          echo "✅ Created secret: $WITHDRAWAL_SECRET_NAME"
+          
           # Create the withdrawal job manifest
-          cat > withdraw-job.yaml <<EOF
+          cat <<EOF | kubectl apply -f -
           apiVersion: batch/v1
           kind: Job
           metadata:
-            name: $JOB_NAME
-            namespace: $NAMESPACE
+            name: ${JOB_NAME}
+            namespace: ${NAMESPACE}
             labels:
               app.kubernetes.io/name: clamm-bot-withdraw
-              app.kubernetes.io/instance: $BOT_NAME
+              app.kubernetes.io/instance: ${BOT_NAME}
               app.kubernetes.io/component: withdrawal
           spec:
-            ttlSecondsAfterFinished: 3600  # Clean up after 1 hour
-            backoffLimit: 0  # Don't retry on failure
+            ttlSecondsAfterFinished: 3600
+            backoffLimit: 0
             completions: 1
             parallelism: 1
             template:
               metadata:
                 labels:
                   app.kubernetes.io/name: clamm-bot-withdraw
-                  app.kubernetes.io/instance: $BOT_NAME
+                  app.kubernetes.io/instance: ${BOT_NAME}
               spec:
                 restartPolicy: Never
                 containers:
@@ -246,27 +262,27 @@ jobs:
                   - name: DATABASE_URL
                     valueFrom:
                       secretKeyRef:
-                        name: $WITHDRAWAL_SECRET_NAME
+                        name: ${WITHDRAWAL_SECRET_NAME}
                         key: DATABASE_URL
                   - name: MNEMONIC
                     valueFrom:
                       secretKeyRef:
-                        name: $WITHDRAWAL_SECRET_NAME
+                        name: ${WITHDRAWAL_SECRET_NAME}
                         key: MNEMONIC
                   - name: OSMOSIS_POOL_ID
                     valueFrom:
                       secretKeyRef:
-                        name: $WITHDRAWAL_SECRET_NAME
+                        name: ${WITHDRAWAL_SECRET_NAME}
                         key: OSMOSIS_POOL_ID
                   - name: REBALANCE_THRESHOLD_PERCENT
                     valueFrom:
                       secretKeyRef:
-                        name: $WITHDRAWAL_SECRET_NAME
+                        name: ${WITHDRAWAL_SECRET_NAME}
                         key: REBALANCE_THRESHOLD_PERCENT
                   - name: OSMOSIS_POSITION_BAND_PERCENTAGE
                     valueFrom:
                       secretKeyRef:
-                        name: $WITHDRAWAL_SECRET_NAME
+                        name: ${WITHDRAWAL_SECRET_NAME}
                         key: OSMOSIS_POSITION_BAND_PERCENTAGE
                   resources:
                     requests:
@@ -276,31 +292,6 @@ jobs:
                       memory: "512Mi"
                       cpu: "500m"
           EOF
-          
-          # Check if secrets exist, if not create them
-          # First check with bot name, then with -clamm-bot suffix
-          SECRET_NAME=""
-          if kubectl get secret ${BOT_NAME}-app-secrets -n $NAMESPACE &> /dev/null; then
-            SECRET_NAME="${BOT_NAME}-app-secrets"
-            echo "Found existing secret: $SECRET_NAME"
-          elif kubectl get secret ${BOT_NAME}-clamm-bot-app-secrets -n $NAMESPACE &> /dev/null; then
-            SECRET_NAME="${BOT_NAME}-clamm-bot-app-secrets"
-            echo "Found existing secret: $SECRET_NAME"
-          else
-            # Create secret with standard naming
-            SECRET_NAME="${BOT_NAME}-app-secrets"
-            echo "Creating new secret: $SECRET_NAME"
-            kubectl create secret generic $SECRET_NAME \
-              --namespace=$NAMESPACE \
-              --from-literal=DATABASE_URL="$DATABASE_URL" \
-              --from-literal=MNEMONIC="$MNEMONIC" \
-              --from-literal=OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
-              --from-literal=REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
-              --from-literal=OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE"
-          fi
-          
-          # Apply the job
-          kubectl apply -f withdraw-job.yaml
           
           echo "Job $JOB_NAME created, waiting for completion..."
           
