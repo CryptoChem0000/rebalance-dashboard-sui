@@ -12,7 +12,7 @@ For each bot (e.g., `clamm-bot-1`, `clamm-bot-2`), you need to create a GitHub E
 - `MNEMONIC` - The wallet mnemonic for the bot (keep this in Secrets, not Variables)
 
 ### Environment Variables
-- `ENABLED` - Set to `"true"` to deploy the bot, or `"false"` to stop it
+- `ENABLED` - Set to `true` to deploy the bot, or `false` to stop it
 - `OSMOSIS_POOL_ID` - The Osmosis pool ID (e.g., "1282")
 - `REBALANCE_THRESHOLD_PERCENT` - The rebalance threshold percentage (e.g., "95")
 - `OSMOSIS_POSITION_BAND_PERCENTAGE` - The position band percentage (e.g., "1")
