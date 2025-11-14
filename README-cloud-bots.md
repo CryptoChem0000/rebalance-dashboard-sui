@@ -18,6 +18,73 @@ For each bot (e.g., `clamm-bot-1`, `clamm-bot-2`), you need to create a GitHub E
 - `OSMOSIS_POSITION_BAND_PERCENTAGE` - The position band percentage (e.g., "1")
 - `WATCH_FREQUENCY` - Watch frequency in seconds (e.g., "600")
 
+## Understanding Rebalance Parameters
+
+### Visual Representation
+```
+Pool Price Range: $1.00 ←───────────────────────────────────────→ $2.00
+                        │                   ↑                   │
+                        │              Current Price            │
+                        │                 $1.50                 │
+                        └───────────────────────────────────────┘
+                                    Full Range
+
+With OSMOSIS_POSITION_BAND_PERCENTAGE = 10:
+
+Position Range:           $1.35 ←─────────────────────→ $1.65
+                                │          ↑          │
+                                │       Current       │
+                                │        $1.50        │
+                                └─────────────────────┘
+                                       ±10% band
+                               (centered on current price)
+
+With REBALANCE_THRESHOLD_PERCENT = 95:
+
+When price moves UP (95% of the road to the upper bound):
+                          $1.35 ←─────────────────────→ $1.65
+                                ↑                ↑    │
+                                │             Current │
+                                │              $1.365 │
+                                │                │    │
+                                │←──── 95% ─────→│←5%→│
+                                                 │
+                                         Rebalance triggered!
+
+When price moves DOWN (95% closer to the lower bound):
+                          $1.35 ←─────────────────────→ $1.65
+                                │    ↑                ↑
+                                │ Current.            │
+                                │  $1.635             │
+                                │    │                │
+                                │←5%→│←───── 95% ────→│
+                                     │
+                              Rebalance triggered!
+
+Safe Zone (price stays within the middle):
+                          $1.35 ←─────────────────────→ $1.65
+                                │←5%→│←── 90% ──→│←5%→│
+                                │          ↑          │
+                                │        Current      │
+                                │        $1.50        │
+                                │                     │
+                                 No rebalancing needed
+```
+
+### Parameter Details
+
+**OSMOSIS_POSITION_BAND_PERCENTAGE** (Allowed: 0.1 - 50)
+- Defines the width of your concentrated liquidity position
+- Example: `1` = ±1% around current price
+- Smaller value = more concentrated = higher fees earned by the bot, but needs more rebalancing
+- Larger value = less concentrated = lower fees earned by the bot, but needs less rebalancing
+
+**REBALANCE_THRESHOLD_PERCENT** (Allowed: 51 - 99)
+- Defines when to trigger a rebalance
+- Example: `95` = rebalance when price moves more than 95% to either direction
+- Higher value = wait longer before rebalancing (more tolerance)
+- Lower value = rebalance more frequently (tighter control)
+
 ## Setting Up a New Bot
 
 1. **Create GitHub Environment**
@@ -82,9 +149,23 @@ To see this info, click on the deployment, then click on the summary box, then e
 # How to see Logs
 To see the logs of your bot, login to https://08fa.grafana.archway.io/login
 
-Then click on `Explore`.
+Then click on `Explore` on the left side of the screen.
 
 After that, find the button that says `Select label`, and after clicking it, select `app_kubernetes_io_instance`
 Next to it, there is another button that says `Select value`, click it, and select your bot (by its name).
 
 Finally, click on the `Run query` button at the top right, and you should see the latest logs of your bot
+
+# How to see a dashboard with stats of your bot
+First login to the Grafana website https://08fa.grafana.archway.io/login
+
+Then click on `Dasbhoards` on the left side of the screen
+
+This should display a list of folders and reports on the middle of the screen.
+Find the `CLAMM Bots` folder and click it
+
+Then click on the `Bot Overview` report.
+
+This will display a dashboard with some stats that we get from the bot's transactions.
+
+To see the stats of your bot, copy your bot's address and paste it into the `Bot Address` box at the top of the screen. Then click `Enter` on your keyboard and the report will refresh and load your bot's stats.
