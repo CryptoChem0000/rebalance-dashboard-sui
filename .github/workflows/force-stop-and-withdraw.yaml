@@ -25,10 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.bot_name }}
     permissions:
-      contents: read
-      packages: read
-      actions: read
-      deployments: write
+      contents: read        # For checking out code
+      packages: read        # For pulling Docker images
+      actions: read         # For workflow operations
+      deployments: write    # For deployment-related operations
     
     steps:
       - name: Validate confirmation
@@ -287,22 +287,63 @@ jobs:
           
           echo "Job $JOB_NAME created, waiting for completion..."
           
-          # Wait for the job to complete (success or failure)
-          if kubectl wait --for=condition=complete --timeout=600s job/$JOB_NAME -n $NAMESPACE 2>/dev/null; then
-            echo "✅ Withdrawal job completed successfully"
-            echo "withdraw_status=success" >> $GITHUB_OUTPUT
-          elif kubectl wait --for=condition=failed --timeout=600s job/$JOB_NAME -n $NAMESPACE 2>/dev/null; then
-            echo "❌ Withdrawal job failed"
-            echo "withdraw_status=failed" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️  Withdrawal job timed out or status unknown"
+          # Monitor job status with a timeout
+          TIMEOUT=180  # 3 minutes
+          ELAPSED=0
+          INTERVAL=5
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Get job status
+            JOB_STATUS=$(kubectl get job $JOB_NAME -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
+            JOB_FAILED=$(kubectl get job $JOB_NAME -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+            
+            # Check for completion
+            if [ "$JOB_STATUS" = "True" ]; then
+              echo "✅ Withdrawal job completed successfully"
+              echo "withdraw_status=success" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            # Check for failure
+            if [ "$JOB_FAILED" = "True" ]; then
+              echo "❌ Withdrawal job failed"
+              echo "withdraw_status=failed" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            # Check if job exists and has active pods
+            ACTIVE_PODS=$(kubectl get job $JOB_NAME -n $NAMESPACE -o jsonpath='{.status.active}' 2>/dev/null || echo "0")
+            SUCCEEDED_PODS=$(kubectl get job $JOB_NAME -n $NAMESPACE -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "0")
+            FAILED_PODS=$(kubectl get job $JOB_NAME -n $NAMESPACE -o jsonpath='{.status.failed}' 2>/dev/null || echo "0")
+            
+            echo "Job status - Active: $ACTIVE_PODS, Succeeded: $SUCCEEDED_PODS, Failed: $FAILED_PODS (${ELAPSED}s elapsed)"
+            
+            # If no active pods and we have failed pods, the job failed
+            if [ "$ACTIVE_PODS" = "0" ] && [ "$FAILED_PODS" != "0" ] && [ "$FAILED_PODS" != "" ]; then
+              echo "❌ Withdrawal job failed (no active pods, $FAILED_PODS failed)"
+              echo "withdraw_status=failed" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          # Check if we timed out
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "⚠️  Withdrawal job timed out after ${TIMEOUT} seconds"
             echo "withdraw_status=timeout" >> $GITHUB_OUTPUT
           fi
           
           # Get job logs
           echo ""
           echo "📋 Job logs:"
-          kubectl logs job/$JOB_NAME -n $NAMESPACE || echo "Failed to retrieve logs"
+          kubectl logs job/$JOB_NAME -n $NAMESPACE --tail=200 || echo "Failed to retrieve logs"
+          
+          # Get pod status for debugging
+          echo ""
+          echo "📊 Pod status:"
+          kubectl get pods -n $NAMESPACE -l job-name=$JOB_NAME || echo "No pods found"
           
           # Get final job status
           echo ""
