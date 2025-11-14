@@ -1,0 +1,397 @@
+name: Withdraw Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      bot_name:
+        description: 'Name of the bot to withdraw (e.g., arbitrum-one-pendle)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type CONFIRM to proceed with withdrawal'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: shared-gke-nonprod
+  GKE_REGION: us-central1
+  NAMESPACE: bolt-prod
+
+jobs:
+  withdraw-bot:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.bot_name }}
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "CONFIRM" ]; then
+            echo "::error::Safety check failed. You must type CONFIRM to proceed with withdrawal."
+            echo "::error::You entered: '${{ github.event.inputs.confirmation }}'"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate bot environment exists
+        id: validate-env
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              const { data: environments } = await github.rest.repos.getAllEnvironments({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              
+              const botName = '${{ github.event.inputs.bot_name }}';
+              const envExists = environments.environments.some(env => env.name === botName);
+              
+              if (!envExists) {
+                core.setFailed(`Environment '${botName}' does not exist. Available environments: ${environments.environments.map(e => e.name).join(', ')}`);
+                return;
+              }
+              
+              console.log(`✅ Environment '${botName}' found`);
+            } catch (error) {
+              core.setFailed(`Failed to validate environment: ${error.message}`);
+            }
+
+      - name: Validate required secrets and variables
+        run: |
+          set -euo pipefail
+          
+          echo "Validating configuration for ${{ github.event.inputs.bot_name }}..."
+          
+          # Check repository secret
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::error::DATABASE_URL repository secret not found"
+            exit 1
+          fi
+          
+          # Check environment secret
+          if [ -z "${{ secrets.MNEMONIC }}" ]; then
+            echo "::error::MNEMONIC secret not found in environment ${{ github.event.inputs.bot_name }}"
+            exit 1
+          fi
+          
+          # Check required variables
+          MISSING_VARS=()
+          
+          if [ -z "${{ vars.OSMOSIS_POOL_ID }}" ]; then
+            MISSING_VARS+=("OSMOSIS_POOL_ID")
+          fi
+          
+          if [ -z "${{ vars.REBALANCE_THRESHOLD_PERCENT }}" ]; then
+            MISSING_VARS+=("REBALANCE_THRESHOLD_PERCENT")
+          fi
+          
+          if [ -z "${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}" ]; then
+            MISSING_VARS+=("OSMOSIS_POSITION_BAND_PERCENTAGE")
+          fi
+          
+          if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+            echo "::error::Missing required variables: ${MISSING_VARS[*]}"
+            exit 1
+          fi
+          
+          echo "✅ All required configuration found"
+
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GKE_PROD_SA_KEY }}"
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+
+      - name: Check bot status
+        id: check-status
+        run: |
+          BOT_NAME="${{ github.event.inputs.bot_name }}"
+          
+          # Check for deployment with both possible naming patterns
+          FOUND_DEPLOYMENT=""
+          
+          if kubectl get deployment $BOT_NAME -n $NAMESPACE &> /dev/null; then
+            FOUND_DEPLOYMENT=$BOT_NAME
+          elif kubectl get deployment ${BOT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
+            FOUND_DEPLOYMENT=${BOT_NAME}-clamm-bot
+          fi
+          
+          if [ -n "$FOUND_DEPLOYMENT" ]; then
+            echo "deployment_name=$FOUND_DEPLOYMENT" >> $GITHUB_OUTPUT
+            
+            # Get current replicas
+            REPLICAS=$(kubectl get deployment $FOUND_DEPLOYMENT -n $NAMESPACE -o jsonpath='{.spec.replicas}')
+            echo "current_replicas=$REPLICAS" >> $GITHUB_OUTPUT
+            
+            # Get current image tag
+            IMAGE_TAG=$(kubectl get deployment $FOUND_DEPLOYMENT -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d: -f2)
+            echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+            
+            echo "✅ Found deployment: $FOUND_DEPLOYMENT"
+            echo "Current replicas: $REPLICAS"
+            echo "Current image tag: $IMAGE_TAG"
+            
+            # Check if any pods are running
+            RUNNING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=$BOT_NAME -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}')
+            if [ -n "$RUNNING_PODS" ]; then
+              echo "has_running_pods=true" >> $GITHUB_OUTPUT
+              echo "Running pods: $RUNNING_PODS"
+            else
+              echo "has_running_pods=false" >> $GITHUB_OUTPUT
+              echo "No running pods found"
+            fi
+          else
+            echo "deployment_name=" >> $GITHUB_OUTPUT
+            echo "current_replicas=0" >> $GITHUB_OUTPUT
+            echo "has_running_pods=false" >> $GITHUB_OUTPUT
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+            echo "⚠️  No existing deployment found for $BOT_NAME"
+          fi
+
+      - name: Stop bot if running
+        if: steps.check-status.outputs.has_running_pods == 'true'
+        run: |
+          DEPLOYMENT_NAME="${{ steps.check-status.outputs.deployment_name }}"
+          
+          echo "🛑 Stopping bot $DEPLOYMENT_NAME..."
+          
+          # Scale down to 0 replicas
+          kubectl scale deployment $DEPLOYMENT_NAME --replicas=0 -n $NAMESPACE
+          
+          # Wait for pods to terminate gracefully
+          echo "Waiting for pods to terminate..."
+          kubectl wait --for=delete pod -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }} -n $NAMESPACE --timeout=300s || true
+          
+          # Double-check no pods are running
+          REMAINING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }} --no-headers | wc -l)
+          if [ "$REMAINING_PODS" -gt 0 ]; then
+            echo "⚠️  Warning: $REMAINING_PODS pods still exist after waiting"
+            kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }}
+          else
+            echo "✅ All pods terminated successfully"
+          fi
+
+      - name: Run withdrawal command
+        id: run-withdraw
+        env:
+          BOT_NAME: ${{ github.event.inputs.bot_name }}
+          IMAGE_TAG: ${{ steps.check-status.outputs.image_tag }}
+          # Repository secrets
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Environment secrets
+          MNEMONIC: ${{ secrets.MNEMONIC }}
+          # Environment variables
+          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
+          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+        run: |
+          echo "💰 Running withdrawal for $BOT_NAME..."
+          
+          # Create a unique job name
+          JOB_NAME="${BOT_NAME}-withdraw-$(date +%s)"
+          
+          # Create the withdrawal job manifest
+          cat > withdraw-job.yaml <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: $JOB_NAME
+            namespace: $NAMESPACE
+            labels:
+              app.kubernetes.io/name: clamm-bot-withdraw
+              app.kubernetes.io/instance: $BOT_NAME
+              app.kubernetes.io/component: withdrawal
+          spec:
+            ttlSecondsAfterFinished: 3600  # Clean up after 1 hour
+            backoffLimit: 0  # Don't retry on failure
+            completions: 1
+            parallelism: 1
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: clamm-bot-withdraw
+                  app.kubernetes.io/instance: $BOT_NAME
+              spec:
+                restartPolicy: Never
+                containers:
+                - name: clamm-bot
+                  image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                  imagePullPolicy: IfNotPresent
+                  command: ["sh", "-c"]
+                  args: ["npm run withdraw -- --no-log --config-file \${CONFIG_FILE}"]
+                  env:
+                  - name: IS_DOCKER_RUN
+                    value: "true"
+                  - name: CONFIG_FILE
+                    value: "./docker-files/config/config.json"
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${BOT_NAME}-app-secrets
+                        key: DATABASE_URL
+                  - name: MNEMONIC
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${BOT_NAME}-app-secrets
+                        key: MNEMONIC
+                  - name: OSMOSIS_POOL_ID
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${BOT_NAME}-app-secrets
+                        key: OSMOSIS_POOL_ID
+                  - name: REBALANCE_THRESHOLD_PERCENT
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${BOT_NAME}-app-secrets
+                        key: REBALANCE_THRESHOLD_PERCENT
+                  - name: OSMOSIS_POSITION_BAND_PERCENTAGE
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${BOT_NAME}-app-secrets
+                        key: OSMOSIS_POSITION_BAND_PERCENTAGE
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+          EOF
+          
+          # Check if secrets exist, if not create them
+          if ! kubectl get secret ${BOT_NAME}-app-secrets -n $NAMESPACE &> /dev/null; then
+            echo "Creating secrets for withdrawal job..."
+            kubectl create secret generic ${BOT_NAME}-app-secrets \
+              --namespace=$NAMESPACE \
+              --from-literal=DATABASE_URL="$DATABASE_URL" \
+              --from-literal=MNEMONIC="$MNEMONIC" \
+              --from-literal=OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+              --from-literal=REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
+              --from-literal=OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE"
+          fi
+          
+          # Apply the job
+          kubectl apply -f withdraw-job.yaml
+          
+          echo "Job $JOB_NAME created, waiting for completion..."
+          
+          # Wait for the job to complete (success or failure)
+          if kubectl wait --for=condition=complete --timeout=600s job/$JOB_NAME -n $NAMESPACE 2>/dev/null; then
+            echo "✅ Withdrawal job completed successfully"
+            echo "withdraw_status=success" >> $GITHUB_OUTPUT
+          elif kubectl wait --for=condition=failed --timeout=600s job/$JOB_NAME -n $NAMESPACE 2>/dev/null; then
+            echo "❌ Withdrawal job failed"
+            echo "withdraw_status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Withdrawal job timed out or status unknown"
+            echo "withdraw_status=timeout" >> $GITHUB_OUTPUT
+          fi
+          
+          # Get job logs
+          echo ""
+          echo "📋 Job logs:"
+          kubectl logs job/$JOB_NAME -n $NAMESPACE || echo "Failed to retrieve logs"
+          
+          # Get final job status
+          echo ""
+          echo "📊 Job status:"
+          kubectl describe job $JOB_NAME -n $NAMESPACE | tail -20
+
+      - name: Update ENABLED environment variable
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              const environmentName = '${{ github.event.inputs.bot_name }}';
+              
+              console.log(`Updating ENABLED variable to false for ${environmentName}...`);
+              
+              // Update the ENABLED variable to false
+              await github.rest.actions.createOrUpdateEnvironmentVariable({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: environmentName,
+                name: 'ENABLED',
+                value: 'false'
+              });
+              
+              console.log('✅ ENABLED variable updated to false');
+            } catch (error) {
+              core.setFailed(`Failed to update ENABLED variable: ${error.message}`);
+            }
+
+      - name: Ensure bot is scaled to 0
+        if: always()
+        run: |
+          # This runs regardless of withdrawal success/failure
+          DEPLOYMENT_NAME="${{ steps.check-status.outputs.deployment_name }}"
+          
+          if [ -n "$DEPLOYMENT_NAME" ]; then
+            echo "🛑 Ensuring bot is scaled to 0..."
+            
+            # Scale to 0 if not already
+            kubectl scale deployment $DEPLOYMENT_NAME --replicas=0 -n $NAMESPACE
+            
+            # Add labels and annotations
+            kubectl label deployment $DEPLOYMENT_NAME -n $NAMESPACE enabled=false --overwrite
+            kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE withdrawn-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+            kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE withdrawal-status="${{ steps.run-withdraw.outputs.withdraw_status }}" --overwrite
+            kubectl annotate deployment $DEPLOYMENT_NAME -n $NAMESPACE withdrawn-by="${{ github.actor }}" --overwrite
+            
+            echo "✅ Deployment scaled to 0 and marked as withdrawn"
+          else
+            echo "ℹ️  No deployment to scale down"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "# 🏁 Withdrawal Summary"
+          echo ""
+          echo "**Bot:** ${{ github.event.inputs.bot_name }}"
+          echo "**Initiated by:** ${{ github.actor }}"
+          echo "**Confirmation:** ${{ github.event.inputs.confirmation == 'CONFIRM' && '✅ Confirmed' || '❌ Not confirmed' }}"
+          echo "**Withdrawal Status:** ${{ steps.run-withdraw.outputs.withdraw_status || 'not executed' }}"
+          echo ""
+          
+          if [ "${{ steps.check-status.outputs.has_running_pods }}" == "true" ]; then
+            echo "- ✅ Bot was running and has been stopped"
+          else
+            echo "- ℹ️  Bot was not running"
+          fi
+          
+          if [ "${{ steps.run-withdraw.outputs.withdraw_status }}" == "success" ]; then
+            echo "- ✅ Withdrawal command executed successfully"
+          elif [ "${{ steps.run-withdraw.outputs.withdraw_status }}" == "failed" ]; then
+            echo "- ❌ Withdrawal command failed (check logs above)"
+          elif [ "${{ steps.run-withdraw.outputs.withdraw_status }}" == "timeout" ]; then
+            echo "- ⚠️  Withdrawal command timed out"
+          else
+            echo "- ⚠️  Withdrawal command was not executed"
+          fi
+          
+          echo "- ✅ ENABLED variable updated to false"
+          echo "- ✅ Bot scaled to 0 instances"
+          echo ""
+          echo "**Next steps:**"
+          echo "- The bot is now disabled and will not restart automatically"
+          echo "- To re-enable the bot, update the ENABLED variable to true and run the deploy workflow"
