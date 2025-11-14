@@ -121,15 +121,20 @@ jobs:
           
           # Check for deployment with both possible naming patterns
           FOUND_DEPLOYMENT=""
+          FOUND_INSTANCE_LABEL=""
           
           if kubectl get deployment $BOT_NAME -n $NAMESPACE &> /dev/null; then
             FOUND_DEPLOYMENT=$BOT_NAME
+            FOUND_INSTANCE_LABEL=$BOT_NAME
           elif kubectl get deployment ${BOT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
             FOUND_DEPLOYMENT=${BOT_NAME}-clamm-bot
+            # For -clamm-bot deployments, the instance label is still just the bot name
+            FOUND_INSTANCE_LABEL=$BOT_NAME
           fi
           
           if [ -n "$FOUND_DEPLOYMENT" ]; then
             echo "deployment_name=$FOUND_DEPLOYMENT" >> $GITHUB_OUTPUT
+            echo "instance_label=$FOUND_INSTANCE_LABEL" >> $GITHUB_OUTPUT
             
             # Get current replicas
             REPLICAS=$(kubectl get deployment $FOUND_DEPLOYMENT -n $NAMESPACE -o jsonpath='{.spec.replicas}')
@@ -140,11 +145,12 @@ jobs:
             echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
             
             echo "✅ Found deployment: $FOUND_DEPLOYMENT"
+            echo "Instance label: $FOUND_INSTANCE_LABEL"
             echo "Current replicas: $REPLICAS"
             echo "Current image tag: $IMAGE_TAG"
             
             # Check if any pods are running
-            RUNNING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=$BOT_NAME -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}')
+            RUNNING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=$FOUND_INSTANCE_LABEL -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}')
             if [ -n "$RUNNING_PODS" ]; then
               echo "has_running_pods=true" >> $GITHUB_OUTPUT
               echo "Running pods: $RUNNING_PODS"
@@ -154,6 +160,7 @@ jobs:
             fi
           else
             echo "deployment_name=" >> $GITHUB_OUTPUT
+            echo "instance_label=$BOT_NAME" >> $GITHUB_OUTPUT
             echo "current_replicas=0" >> $GITHUB_OUTPUT
             echo "has_running_pods=false" >> $GITHUB_OUTPUT
             echo "image_tag=latest" >> $GITHUB_OUTPUT
@@ -172,13 +179,13 @@ jobs:
           
           # Wait for pods to terminate gracefully
           echo "Waiting for pods to terminate..."
-          kubectl wait --for=delete pod -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }} -n $NAMESPACE --timeout=300s || true
+          kubectl wait --for=delete pod -l app.kubernetes.io/instance=${{ steps.check-status.outputs.instance_label }} -n $NAMESPACE --timeout=300s || true
           
           # Double-check no pods are running
-          REMAINING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }} --no-headers | wc -l)
+          REMAINING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ steps.check-status.outputs.instance_label }} --no-headers | wc -l)
           if [ "$REMAINING_PODS" -gt 0 ]; then
             echo "⚠️  Warning: $REMAINING_PODS pods still exist after waiting"
-            kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ github.event.inputs.bot_name }}
+            kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=${{ steps.check-status.outputs.instance_label }}
           else
             echo "✅ All pods terminated successfully"
           fi
@@ -218,6 +225,7 @@ jobs:
             backoffLimit: 0  # Don't retry on failure
             completions: 1
             parallelism: 1
+            cleanupPolicy: Delete  # Clean up the secret when job is deleted
             template:
               metadata:
                 labels:
@@ -239,27 +247,27 @@ jobs:
                   - name: DATABASE_URL
                     valueFrom:
                       secretKeyRef:
-                        name: ${BOT_NAME}-app-secrets
+                        name: $WITHDRAWAL_SECRET_NAME
                         key: DATABASE_URL
                   - name: MNEMONIC
                     valueFrom:
                       secretKeyRef:
-                        name: ${BOT_NAME}-app-secrets
+                        name: $WITHDRAWAL_SECRET_NAME
                         key: MNEMONIC
                   - name: OSMOSIS_POOL_ID
                     valueFrom:
                       secretKeyRef:
-                        name: ${BOT_NAME}-app-secrets
+                        name: $WITHDRAWAL_SECRET_NAME
                         key: OSMOSIS_POOL_ID
                   - name: REBALANCE_THRESHOLD_PERCENT
                     valueFrom:
                       secretKeyRef:
-                        name: ${BOT_NAME}-app-secrets
+                        name: $WITHDRAWAL_SECRET_NAME
                         key: REBALANCE_THRESHOLD_PERCENT
                   - name: OSMOSIS_POSITION_BAND_PERCENTAGE
                     valueFrom:
                       secretKeyRef:
-                        name: ${BOT_NAME}-app-secrets
+                        name: $WITHDRAWAL_SECRET_NAME
                         key: OSMOSIS_POSITION_BAND_PERCENTAGE
                   resources:
                     requests:
@@ -271,9 +279,19 @@ jobs:
           EOF
           
           # Check if secrets exist, if not create them
-          if ! kubectl get secret ${BOT_NAME}-app-secrets -n $NAMESPACE &> /dev/null; then
-            echo "Creating secrets for withdrawal job..."
-            kubectl create secret generic ${BOT_NAME}-app-secrets \
+          # First check with bot name, then with -clamm-bot suffix
+          SECRET_NAME=""
+          if kubectl get secret ${BOT_NAME}-app-secrets -n $NAMESPACE &> /dev/null; then
+            SECRET_NAME="${BOT_NAME}-app-secrets"
+            echo "Found existing secret: $SECRET_NAME"
+          elif kubectl get secret ${BOT_NAME}-clamm-bot-app-secrets -n $NAMESPACE &> /dev/null; then
+            SECRET_NAME="${BOT_NAME}-clamm-bot-app-secrets"
+            echo "Found existing secret: $SECRET_NAME"
+          else
+            # Create secret with standard naming
+            SECRET_NAME="${BOT_NAME}-app-secrets"
+            echo "Creating new secret: $SECRET_NAME"
+            kubectl create secret generic $SECRET_NAME \
               --namespace=$NAMESPACE \
               --from-literal=DATABASE_URL="$DATABASE_URL" \
               --from-literal=MNEMONIC="$MNEMONIC" \
@@ -349,6 +367,11 @@ jobs:
           echo ""
           echo "📊 Job status:"
           kubectl describe job $JOB_NAME -n $NAMESPACE | tail -20
+          
+          # Clean up the withdrawal secret (job will be auto-cleaned by ttlSecondsAfterFinished)
+          echo ""
+          echo "🧹 Cleaning up withdrawal secret..."
+          kubectl delete secret $WITHDRAWAL_SECRET_NAME -n $NAMESPACE || true
 
       - name: Update ENABLED environment variable
         uses: actions/github-script@v6
