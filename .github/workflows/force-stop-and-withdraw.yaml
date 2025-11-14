@@ -1,4 +1,4 @@
-name: Withdraw Bot
+name: Force Stop Bot and Withdraw
 
 on:
   workflow_dispatch:
