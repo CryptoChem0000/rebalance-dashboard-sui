@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bot_name:
-        description: 'Name of the bot to withdraw (e.g., clamm-bot-1)'
+        description: 'Name of the bot to stop and withdraw (e.g., clamm-bot-1)'
         required: true
         type: string
       confirmation:
@@ -225,7 +225,6 @@ jobs:
             backoffLimit: 0  # Don't retry on failure
             completions: 1
             parallelism: 1
-            cleanupPolicy: Delete  # Clean up the secret when job is deleted
             template:
               metadata:
                 labels:
