@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bot_name:
-        description: 'Name of the bot to withdraw (e.g., clamm-bot-1)'
+        description: 'Name of the bot to withdraw (e.g., arbitrum-one-pendle)'
         required: true
         type: string
       confirmation:
@@ -370,39 +370,65 @@ jobs:
           script: |
             try {
               const environmentName = '${{ github.event.inputs.bot_name }}';
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
               
               console.log(`Updating ENABLED variable to false for ${environmentName}...`);
+              console.log(`Repository: ${owner}/${repo}`);
               
-              // GitHub API doesn't have a direct method to update environment variables
-              // We need to use the REST API directly
-              const response = await github.request('PATCH /repos/{owner}/{repo}/environments/{environment_name}/variables/{name}', {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                environment_name: environmentName,
-                name: 'ENABLED',
-                value: 'false'
-              });
+              // Try using the REST API with full URL
+              const baseUrl = 'https://api.github.com';
+              const headers = {
+                'Accept': 'application/vnd.github+json',
+                'Authorization': `Bearer ${{ secrets.WORKFLOW_PAT }}`,
+                'X-GitHub-Api-Version': '2022-11-28'
+              };
               
-              console.log('✅ ENABLED variable updated to false');
-            } catch (error) {
-              // If the variable doesn't exist, try to create it
-              if (error.status === 404) {
-                console.log('Variable does not exist, creating it...');
-                try {
-                  await github.request('POST /repos/{owner}/{repo}/environments/{environment_name}/variables', {
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    environment_name: environmentName,
-                    name: 'ENABLED',
-                    value: 'false'
-                  });
-                  console.log('✅ ENABLED variable created and set to false');
-                } catch (createError) {
-                  core.setFailed(`Failed to create ENABLED variable: ${createError.message}`);
+              // First try to update
+              try {
+                const updateUrl = `${baseUrl}/repos/${owner}/${repo}/environments/${environmentName}/variables/ENABLED`;
+                const updateResponse = await fetch(updateUrl, {
+                  method: 'PATCH',
+                  headers: headers,
+                  body: JSON.stringify({ value: 'false' })
+                });
+                
+                if (updateResponse.ok) {
+                  console.log('✅ ENABLED variable updated to false');
+                  return;
+                } else if (updateResponse.status === 404) {
+                  console.log('Variable does not exist, will create it...');
+                } else {
+                  const errorText = await updateResponse.text();
+                  throw new Error(`Update failed: ${updateResponse.status} - ${errorText}`);
                 }
-              } else {
-                core.setFailed(`Failed to update ENABLED variable: ${error.message}`);
+              } catch (error) {
+                console.log(`Update attempt failed: ${error.message}`);
               }
+              
+              // If update failed with 404, try to create
+              try {
+                const createUrl = `${baseUrl}/repos/${owner}/${repo}/environments/${environmentName}/variables`;
+                const createResponse = await fetch(createUrl, {
+                  method: 'POST',
+                  headers: headers,
+                  body: JSON.stringify({ 
+                    name: 'ENABLED',
+                    value: 'false' 
+                  })
+                });
+                
+                if (createResponse.ok) {
+                  console.log('✅ ENABLED variable created and set to false');
+                } else {
+                  const errorText = await createResponse.text();
+                  throw new Error(`Create failed: ${createResponse.status} - ${errorText}`);
+                }
+              } catch (error) {
+                throw error;
+              }
+            } catch (error) {
+              core.setFailed(`Failed to update ENABLED variable: ${error.message}`);
             }
 
       - name: Ensure bot is scaled to 0
