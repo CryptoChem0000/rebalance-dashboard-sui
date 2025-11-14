@@ -140,7 +140,7 @@ The deployment workflow outputs a summary table showing:
 To see this info, click on the deployment, then click on the summary box, then expand the `Generate deployment summary` option
 
 # How to see Logs
-To see the logs of your bot, login to https://08fa.grafana.archway.io/login
+To see the logs of your bot, login to https://08fa.grafana.archway.io/login (credentials available on 1password)
 
 Then click on `Explore` on the left side of the screen.
 
@@ -150,7 +150,7 @@ Next to it, there is another button that says `Select value`, click it, and sele
 Finally, click on the `Run query` button at the top right, and you should see the latest logs of your bot
 
 # How to see a dashboard with stats of your bot
-First login to the Grafana website https://08fa.grafana.archway.io/login
+First login to the Grafana website https://08fa.grafana.archway.io/login (credentials available on 1password)
 
 Then click on `Dasbhoards` on the left side of the screen
 
@@ -161,4 +161,5 @@ Then click on the `Bot Overview` report.
 
 This will display a dashboard with some stats that we get from the bot's transactions.
 
-To see the stats of your bot, copy your bot's address and paste it into the `Bot Address` box at the top of the screen. Then click `Enter` on your keyboard and the report will refresh and load your bot's stats.
+To see the stats of your bot, you need to copy your bot's address on both Osmosis and Archway networks.
+Paste them into the `Bot Address on Osmosis` and `Bot Address on Archway` boxes at the top of the screen. Then click `Refresh` on the top right of the screen and the report will refresh and load your bot's stats.
