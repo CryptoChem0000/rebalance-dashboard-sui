@@ -147,7 +147,7 @@ To trigger a forceful stop of the bot, and then withdraw the current position by
    - `CONFIRM`: To confirm that you want to stop and withdraw, just type CONFIRM in this option
 3. Click "Run workflow"
 
-To make sure the bot will not be later restarted by accident, make sure you also update the environment variable `ENABLED` to `false`
+To make sure the bot will not be later restarted by accident, make sure you also manually update the environment variable `ENABLED` to `false`
 
 # How to see Logs
 To see the logs of your bot, login to https://08fa.grafana.archway.io/login (credentials available on 1password)
