@@ -8,8 +8,6 @@ on:
         required: false
         type: boolean
         default: true
-    branches:
-      - chore/kill-bot
 
 env:
   PROJECT_ID: ${{ secrets.GKE_PROJECT }}
@@ -57,13 +55,7 @@ jobs:
           
           if [ "${{ github.event.inputs.show-details }}" == "true" ]; then
             # Detailed view
-            kubectl get deployments -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=clamm-bot -o custom-columns=\
-NAME:.metadata.name,\
-READY:.status.readyReplicas,\
-DESIRED:.spec.replicas,\
-IMAGE:.spec.template.spec.containers[0].image,\
-AGE:.metadata.creationTimestamp,\
-STOPPED:.metadata.annotations.stopped-at
+            kubectl get deployments -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=clamm-bot -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,DESIRED:.spec.replicas,IMAGE:.spec.template.spec.containers[0].image,AGE:.metadata.creationTimestamp,STOPPED:.metadata.annotations.stopped-at
           else
             # Simple view
             kubectl get deployments -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=clamm-bot
