@@ -8,9 +8,6 @@ on:
         required: false
         type: boolean
         default: true
-  push:
-    branches:
-      - chore/kill-bot
 
 env:
   PROJECT_ID: ${{ secrets.GKE_PROJECT }}

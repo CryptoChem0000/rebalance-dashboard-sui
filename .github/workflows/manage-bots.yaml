@@ -21,9 +21,6 @@ on:
         description: 'Type "CONFIRM" to execute the action'
         required: true
         type: string
-  push:
-    branches:
-      - chore/kill-bot
 
 env:
   PROJECT_ID: ${{ secrets.GKE_PROJECT }}
