@@ -109,11 +109,11 @@ export class LiquidityManager {
       type: KeyStoreType.ENV_VARIABLE,
     });
 
-    const archwaySigner = await keyStore.getSigner(
+    const archwaySigner = await keyStore.getCosmWasmSigner(
       DEFAULT_KEY_NAME,
       findArchwayChainInfo(params.environment).prefix
     );
-    const osmosisSigner = await keyStore.getSigner(
+    const osmosisSigner = await keyStore.getCosmWasmSigner(
       DEFAULT_KEY_NAME,
       findOsmosisChainInfo(params.environment).prefix
     );

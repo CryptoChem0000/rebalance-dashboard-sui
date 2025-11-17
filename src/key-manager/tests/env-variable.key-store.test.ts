@@ -116,7 +116,7 @@ describe("EnvVariableKeyStore", () => {
       const keyName = "SIGNER_TEST";
       const mnemonic = await keyStore.createKey(keyName);
 
-      const signer = await keyStore.getSigner(keyName);
+      const signer = await keyStore.getCosmWasmSigner(keyName);
       expect(signer).toBeDefined();
 
       const accounts = await signer.getAccounts();
@@ -128,7 +128,7 @@ describe("EnvVariableKeyStore", () => {
       const keyName = "COSMOS_SIGNER";
       await keyStore.createKey(keyName);
 
-      const signer = await keyStore.getSigner(keyName, "cosmos");
+      const signer = await keyStore.getCosmWasmSigner(keyName, "cosmos");
       const accounts = await signer.getAccounts();
 
       expect(accounts).toHaveLength(1);
@@ -139,8 +139,8 @@ describe("EnvVariableKeyStore", () => {
       const keyName = "MULTI_CHAIN";
       await keyStore.createKey(keyName);
 
-      const cosmosSigner = await keyStore.getSigner(keyName, "cosmos");
-      const osmoSigner = await keyStore.getSigner(keyName, "osmo");
+      const cosmosSigner = await keyStore.getCosmWasmSigner(keyName, "cosmos");
+      const osmoSigner = await keyStore.getCosmWasmSigner(keyName, "osmo");
 
       const cosmosAccounts = await cosmosSigner.getAccounts();
       const osmoAccounts = await osmoSigner.getAccounts();
@@ -151,7 +151,7 @@ describe("EnvVariableKeyStore", () => {
     });
 
     it("should throw error for non-existent key", async () => {
-      await expect(keyStore.getSigner("NON_EXISTENT")).rejects.toThrow(
+      await expect(keyStore.getCosmWasmSigner("NON_EXISTENT")).rejects.toThrow(
         "Key 'NON_EXISTENT' not found in environment variables"
       );
     });
@@ -322,7 +322,7 @@ DEBUG=true
       expect(retrieved).toBe(mnemonic1);
 
       // Use for signing
-      const signer = await keyStore.getSigner("LIFECYCLE_TEST", "cosmos");
+      const signer = await keyStore.getCosmWasmSigner("LIFECYCLE_TEST", "cosmos");
       const accounts = await signer.getAccounts();
       expect(accounts[0].address).toMatch(/^cosmos/);
 
@@ -345,9 +345,9 @@ DEBUG=true
       await keyStore.createKey("JUNO_STAKING");
 
       // Get signers for each
-      const cosmosSigner = await keyStore.getSigner("COSMOS_MAIN", "cosmos");
-      const osmoSigner = await keyStore.getSigner("OSMOSIS_TRADING", "osmo");
-      const junoSigner = await keyStore.getSigner("JUNO_STAKING", "juno");
+      const cosmosSigner = await keyStore.getCosmWasmSigner("COSMOS_MAIN", "cosmos");
+      const osmoSigner = await keyStore.getCosmWasmSigner("OSMOSIS_TRADING", "osmo");
+      const junoSigner = await keyStore.getCosmWasmSigner("JUNO_STAKING", "juno");
 
       // Verify each has correct prefix
       const cosmosAccounts = await cosmosSigner.getAccounts();

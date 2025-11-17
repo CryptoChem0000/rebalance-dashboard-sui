@@ -1,6 +1,7 @@
 import { Bip39, Random } from "@cosmjs/crypto";
 import { DirectSecp256k1HdWallet, OfflineSigner } from "@cosmjs/proto-signing";
 import { PrivateKey } from "@injectivelabs/sdk-ts";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import dotenv from "dotenv";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -28,7 +29,7 @@ import { AbstractKeyStore } from "../types";
  * ```typescript
  * const keyStore = await EnvVariableKeyStore.make('.env.local');
  * const mnemonic = await keyStore.createKey('WALLET_MAIN');
- * const signer = await keyStore.getSigner('WALLET_MAIN', 'cosmos');
+ * const signer = await keyStore.getCosmWasmSigner('WALLET_MAIN', 'cosmos');
  * ```
  */
 export class EnvVariableKeyStore extends AbstractKeyStore<string> {
@@ -101,7 +102,7 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
   }
 
   /**
-   * Creates an OfflineSigner instance for transaction signing
+   * Creates an OfflineSigner instance for CosmWasm transaction signing
    *
    * @param name - The environment variable name containing the mnemonic
    * @param chainPrefix - The blockchain address prefix (defaults to "archway")
@@ -112,32 +113,48 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
    * @example
    * ```typescript
    * // Get signer for Cosmos Hub
-   * const signer = await keyStore.getSigner('WALLET_MAIN', 'cosmos');
+   * const signer = await keyStore.getCosmWasmSigner('WALLET_MAIN', 'cosmos');
    *
    * // Get signer for Osmosis
-   * const osmoSigner = await keyStore.getSigner('WALLET_TRADE', 'osmo');
+   * const osmoSigner = await keyStore.getCosmWasmSigner('WALLET_TRADE', 'osmo');
    *
    * // Get accounts from signer
    * const accounts = await signer.getAccounts();
    * console.log('Address:', accounts[0].address);
    * ```
    */
-  async getSigner(
+  async getCosmWasmSigner(
     name: string,
     chainPrefix: string = "archway"
   ): Promise<OfflineSigner> {
     const mnemonic = await this.getKey(name);
 
-    // Create a wallet from the mnemonic
-    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
+    return await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
       prefix: chainPrefix,
     });
-
-    return wallet;
   }
 
   /**
-   * Get the address for the specified key and chain
+   * Creates an Ed25519Keypair instance for Sui transaction signing
+   *
+   * @param name - The environment variable name containing the mnemonic
+   * @returns Promise resolving to an OfflineSigner instance
+   * @throws Error if the key is not found or the mnemonic is invalid
+   *
+   * @example
+   * ```typescript
+   * // Get signer for Sui
+   * const signer = await keyStore.getCosmWasmSigner('WALLET_MAIN');
+   * ```
+   */
+  async getSuiSigner(name: string): Promise<Ed25519Keypair> {
+    const mnemonic = await this.getKey(name);
+
+    return Ed25519Keypair.deriveKeypair(mnemonic);
+  }
+
+  /**
+   * Get the address for the specified key and CosmWasm chain
    *
    * @param name - The environment variable name containing the mnemonic
    * @param chainPrefix - The blockchain address prefix (defaults to "archway")
@@ -160,7 +177,7 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
    * console.log('Injective address:', injAddr);
    * ```
    */
-  async getAddress(
+  async getCosmWasmAddress(
     name: string,
     chainPrefix: string = "archway"
   ): Promise<string> {
@@ -170,9 +187,23 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
       const publicKey = privateKey.toPublicKey();
       return publicKey.toAddress().address;
     } else {
-      const signer = await this.getSigner(name, chainPrefix);
+      const signer = await this.getCosmWasmSigner(name, chainPrefix);
       return getSignerAddress(signer);
     }
+  }
+
+  /**
+   * Get the Sui address for the specified key
+   *
+   * @param name - The environment variable name containing the mnemonic
+   * @returns Promise resolving to the address string for the given key
+   * @throws Error if the key is not found or the mnemonic is invalid
+   *
+   * @example
+   */
+  async getSuiAddress(name: string): Promise<string> {
+    const signer = await this.getSuiSigner(name);
+    return getSignerAddress(signer);
   }
 
   /**

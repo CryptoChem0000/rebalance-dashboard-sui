@@ -7,6 +7,7 @@ import {
   OSMOSIS_MAINNET_TOKENS_MAP,
   OSMOSIS_TESTNET_TOKENS_MAP,
 } from "../osmosis";
+import { SUI_MAINNET_TOKENS_MAP, SUI_TESTNET_TOKENS_MAP } from "../sui";
 
 import { RegistryToken } from "../types";
 
@@ -48,4 +49,12 @@ export const findOsmosisTokensMap = (
   return environment === "mainnet"
     ? OSMOSIS_MAINNET_TOKENS_MAP
     : OSMOSIS_TESTNET_TOKENS_MAP;
+};
+
+export const findSuiTokensMap = (
+  environment: "mainnet" | "testnet" = "mainnet"
+): Record<string, RegistryToken> => {
+  return environment === "mainnet"
+    ? SUI_MAINNET_TOKENS_MAP
+    : SUI_TESTNET_TOKENS_MAP;
 };

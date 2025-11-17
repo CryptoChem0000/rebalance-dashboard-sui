@@ -1,0 +1,10 @@
+{
+  "rebalanceThresholdPercent": 90,
+  "cetusPool": {
+    "id": "0xb8d7d9e66a60c239e7a60110efcf8de6c705580ed924d0dde141f4a0e2c90105"
+  },
+  "cetusPosition": {
+    "id": "0x1613d606b6d3fd24fc9ef2a552dd51132359ea2a50f85db19b8fba6889dccab5",
+    "bandPercentage": 1
+  }
+}

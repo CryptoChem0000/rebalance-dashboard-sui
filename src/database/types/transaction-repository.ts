@@ -7,6 +7,7 @@ import {
 
 export enum TransactionType {
   BOLT_ARCHWAY_SWAP = "bolt_archway_swap",
+  BOLT_SUI_SWAP = "bolt_archway_swap",
   CREATE_POOL = "create_pool",
   COLLECT_SPREAD_REWARDS = "collect_spread_rewards",
   CREATE_POSITION = "create_position",

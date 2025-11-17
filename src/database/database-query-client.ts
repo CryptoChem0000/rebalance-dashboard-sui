@@ -36,7 +36,7 @@ export class DatabaseQueryClient {
     });
 
     // Get the Osmosis address
-    const osmosisSigner = await keyStore.getSigner(
+    const osmosisSigner = await keyStore.getCosmWasmSigner(
       DEFAULT_KEY_NAME,
       findOsmosisChainInfo(params.environment).prefix
     );
