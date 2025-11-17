@@ -64,12 +64,6 @@ jobs:
             exit 1
           fi
           
-          if [ -z "${{ secrets.WORKFLOW_PAT }}" ]; then
-            echo "::error::WORKFLOW_PAT repository secret not found. This is required to update environment variables."
-            echo "::error::Please create a fine-grained PAT with 'Administration: Write' permission and add it as WORKFLOW_PAT secret"
-            exit 1
-          fi
-          
           # Check environment secret
           if [ -z "${{ secrets.MNEMONIC }}" ]; then
             echo "::error::MNEMONIC secret not found in environment ${{ github.event.inputs.bot_name }}"
@@ -298,7 +292,7 @@ jobs:
           # Monitor job status with a timeout
           TIMEOUT=180  # 3 minutes
           ELAPSED=0
-          INTERVAL=7
+          INTERVAL=5
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
             # Get job status
