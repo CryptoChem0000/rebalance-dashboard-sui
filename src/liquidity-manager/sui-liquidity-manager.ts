@@ -349,7 +349,7 @@ export class SuiLiquidityManager {
 
     // Ideal token1 is idealToken0 converted by price (slippage already accounted for in the ratio)
     // Price is already in smallest units, so this gives us idealAmount1 in smallest units
-    const idealAmount1 = idealAmount0.times(currentPrice);
+    const idealAmount1 = idealAmount0.div(currentPrice);
 
     console.log(
       `Ideal amounts (with 1% slippage): ${
@@ -522,9 +522,7 @@ export class SuiLiquidityManager {
     // Recalculate ideal amounts with new balances and price after swaps
     // Step 1: Calculate total safe value in token0 terms (using smallest units)
     const finalValue0 = BigNumber(safeBalance0Final.amount);
-    const finalValue1 = BigNumber(safeBalance1Final.amount).times(
-      refreshedPrice
-    );
+    const finalValue1 = BigNumber(safeBalance1Final.amount).div(refreshedPrice);
     const finalTotalValue = finalValue0.plus(finalValue1);
 
     // Step 2: Calculate ideal token0 with 1% slippage: idealToken0 = totalValue * 100 / 201
