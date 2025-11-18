@@ -2,6 +2,12 @@
 
 ## Quick Start
 
+### Install dependencies
+
+```bash
+npm install
+```
+
 ### Configuration
 
 Create or edit `sui-config.json` in the project root:

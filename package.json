@@ -39,8 +39,8 @@
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
     "@archwayhq/arch3.js": "^0.7.5",
-    "@bolt-liquidity-hq/cosmwasm-client": "^0.1.0-beta.21",
-    "@bolt-liquidity-hq/sui-client": "^0.1.0-beta.21",
+    "@bolt-liquidity-hq/cosmwasm-client": "^0.1.0-beta.22",
+    "@bolt-liquidity-hq/sui-client": "^0.1.0-beta.22",
     "@cetusprotocol/common-sdk": "^1.2.8",
     "@cetusprotocol/sui-clmm-sdk": "^1.2.8",
     "@cosmjs/crypto": "^0.36.0",
