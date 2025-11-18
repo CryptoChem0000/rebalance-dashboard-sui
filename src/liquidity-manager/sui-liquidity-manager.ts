@@ -379,7 +379,7 @@ export class SuiLiquidityManager {
         pool.coin_type_a,
         pool.coin_type_b
       );
-      console.log(111, boltPriceResult);
+
       // Determine which token to swap and how much
       let amountToSwap: BigNumber;
       let expectedOutput: BigNumber;
