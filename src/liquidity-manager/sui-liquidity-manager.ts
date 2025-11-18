@@ -309,7 +309,7 @@ export class SuiLiquidityManager {
     // Price is token0/token1 in human-readable terms
     // To convert to smallest units: price_smallest = price_human * 10^(token0.decimals - token1.decimals)
     const currentPrice = BigNumber(currentPriceHumanReadable).shiftedBy(
-      token0.decimals - token1.decimals
+      token1.decimals - token0.decimals
     );
 
     console.log(
@@ -337,7 +337,7 @@ export class SuiLiquidityManager {
     //
     // Step 1: Calculate total safe value in token0 terms (using smallest units)
     const value0 = BigNumber(safeBalance0.amount);
-    const value1 = BigNumber(safeBalance1.amount).times(currentPrice);
+    const value1 = BigNumber(safeBalance1.amount).div(currentPrice);
     const totalValue = value0.plus(value1);
 
     // Step 2: Calculate ideal amounts considering 1% slippage
@@ -349,7 +349,7 @@ export class SuiLiquidityManager {
 
     // Ideal token1 is idealToken0 converted by price (slippage already accounted for in the ratio)
     // Price is already in smallest units, so this gives us idealAmount1 in smallest units
-    const idealAmount1 = idealAmount0.div(currentPrice);
+    const idealAmount1 = idealAmount0.times(currentPrice);
 
     console.log(
       `Ideal amounts (with 1% slippage): ${
@@ -379,7 +379,7 @@ export class SuiLiquidityManager {
         pool.coin_type_a,
         pool.coin_type_b
       );
-
+      console.log(111, boltPriceResult);
       // Determine which token to swap and how much
       let amountToSwap: BigNumber;
       let expectedOutput: BigNumber;
@@ -406,7 +406,7 @@ export class SuiLiquidityManager {
         const deficit = idealAmount0.minus(currentAmount0);
         // Convert deficit to token1 amount using Bolt price
         const boltPrice = BigNumber(boltPriceResult.price);
-        amountToSwap = deficit.div(boltPrice);
+        amountToSwap = deficit.times(boltPrice);
         expectedOutput = deficit;
         // Don't swap more than we have
         amountToSwap = BigNumber.min(amountToSwap, currentAmount1);
@@ -425,6 +425,7 @@ export class SuiLiquidityManager {
             assetOut,
             assetIn
           );
+
           if (boltPoolConfig && expectedOutput.lte(boltPoolConfig.minBaseOut)) {
             console.log(
               `Swap amount is smaller than minimum output on Bolt exchange (${expectedOutput.toString()} <= ${
