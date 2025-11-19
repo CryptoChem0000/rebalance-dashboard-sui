@@ -268,7 +268,7 @@ export class SuiLiquidityManager {
       innerSuiBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     // If any token is native (SUI), discount 0.1 SUI for gas
-    const GAS_RESERVE = BigNumber(0.1).times(10 ** 9); // 0.1 SUI in smallest unit
+    const GAS_RESERVE = BigNumber(0.15).times(10 ** 9); // 0.15 SUI in smallest unit
     const nativeTokenDenom = normalizeStructTag(SUI_TYPE_ARG);
 
     // Create safe balances for calculations (with gas reserve deducted)
@@ -517,7 +517,7 @@ export class SuiLiquidityManager {
 
     // Convert refreshed price to smallest on-chain units for calculations
     const refreshedPrice = BigNumber(refreshedPriceHumanReadable).shiftedBy(
-      token0.decimals - token1.decimals
+      token1.decimals - token0.decimals
     );
 
     // Recalculate ideal amounts with new balances and price after swaps
@@ -531,9 +531,9 @@ export class SuiLiquidityManager {
 
     // Step 3: Apply constraint - can't use more token0 than we have
     // Also ensure we have enough token1 with slippage: idealToken0 * price * 1.01 <= safeBalance1Final
-    const maxToken0BasedOnToken1Final = BigNumber(safeBalance1Final.amount).div(
-      refreshedPrice.times(BigNumber(1).plus(positionSlippage))
-    );
+    const maxToken0BasedOnToken1Final = BigNumber(
+      safeBalance1Final.amount
+    ).times(refreshedPrice.times(BigNumber(1).plus(positionSlippage)));
 
     // Conservative token0 amount is the minimum of:
     // - Ideal amount from total value calculation (finalIdealAmount0)
