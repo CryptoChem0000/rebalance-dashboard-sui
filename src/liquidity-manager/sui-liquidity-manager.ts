@@ -1,6 +1,7 @@
 import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
 import {
+  CalculateAddLiquidityResult,
   CetusClmmSDK,
   CustomRangeParams,
   Pool,
@@ -319,53 +320,64 @@ export class SuiLiquidityManager {
       `Current pool price (smallest units): ${currentPrice.toString()}`
     );
 
-    // Calculate ideal amounts for position range
+    // Calculate price range for position (before swapping, so we know what ratio we need)
     const bandPercentage = BigNumber(
       this.config.cetusPosition.bandPercentage
     ).div(100);
-
-    // For range prices, we use human-readable price
     const lowerPrice = BigNumber(currentPriceHumanReadable)
       .times(BigNumber(1).minus(bandPercentage))
-      .toFixed(token0.decimals);
+      .toFixed(token1.decimals);
     const upperPrice = BigNumber(currentPriceHumanReadable)
       .times(BigNumber(1).plus(bandPercentage))
-      .toFixed(token0.decimals);
+      .toFixed(token1.decimals);
 
-    // Calculate ideal token amounts based on total safe value and slippage
-    // Position creator uses fix_amount_a: true, so token0 is FIXED and token1 can vary with slippage
-    //
+    console.log(
+      `Price range: ${lowerPrice} - ${upperPrice} (current: ${currentPriceHumanReadable.toString()})`
+    );
+
+    // Calculate ideal amounts based on total safe value and current price
     // Step 1: Calculate total safe value in token0 terms (using smallest units)
-    const value0 = BigNumber(safeBalance0.amount);
-    const value1 = BigNumber(safeBalance1.amount).div(currentPrice);
-    const totalValue = value0.plus(value1);
+    // Total value = safeToken0 + (safeToken1 / currentPrice)
+    const safeToken0Amount = BigNumber(safeBalance0.amount);
+    const safeToken1Amount = BigNumber(safeBalance1.amount);
+
+    // Convert token1 to token0 terms using current price
+    // currentPrice is in smallest units: token0_smallest / token1_smallest
+    // So token1_value_in_token0 = token1_amount / currentPrice
+    const token1ValueInToken0 = safeToken1Amount.div(currentPrice);
+    const totalValueInToken0 = safeToken0Amount.plus(token1ValueInToken0);
+
+    console.log(
+      `Total safe value in ${token0.name} terms: ${
+        new TokenAmount(totalValueInToken0.toFixed(0), token0)
+          .humanReadableAmount
+      } ${token0.name}`
+    );
 
     // Step 2: Calculate ideal amounts considering 1% slippage
     // When using X token0, we need X * price * 1.01 token1 (with 1% slippage)
     // Total value in token0 terms: X + (X * price * 1.01) / price = X + X * 1.01 = X * 2.01
     // Therefore: idealToken0 = totalValue / 2.01 = totalValue * 100 / 201
-    const positionSlippage = BigNumber(0.01); // 1% slippage for position creation
-    const idealAmount0 = totalValue.times(100).div(201);
+    const idealAmount0 = totalValueInToken0.times(100).div(201);
 
-    // Ideal token1 is idealToken0 converted by price (slippage already accounted for in the ratio)
-    // Price is already in smallest units, so this gives us idealAmount1 in smallest units
+    // Ideal token1 is idealToken0 converted by current price (with 1% slippage)
+    // idealToken1 = idealToken0 * currentPrice * 1.01
     const idealAmount1 = idealAmount0.times(currentPrice);
 
     console.log(
-      `Ideal amounts (with 1% slippage): ${
+      `Ideal amounts for price range (with 1% slippage): ${
         new TokenAmount(idealAmount0.toFixed(0), token0).humanReadableAmount
       } ${token0.name}, ${
         new TokenAmount(idealAmount1.toFixed(0), token1).humanReadableAmount
       } ${token1.name}`
     );
 
-    // Check current balances
+    // Check current safe balances
     const currentAmount0 = BigNumber(safeBalance0.amount);
     const currentAmount1 = BigNumber(safeBalance1.amount);
 
     // Determine if we need to swap to get closer to ideal amounts
-    // If we have more token0 than ideal, swap token0 for token1
-    // If we have less token0 than ideal, swap token1 for token0
+    // We want to swap only what's needed to reach the optimal ratio
     const hasExcessToken0 = currentAmount0.gt(idealAmount0);
     const needsMoreToken0 = currentAmount0.lt(idealAmount0);
 
@@ -472,16 +484,21 @@ export class SuiLiquidityManager {
             .humanReadableAmount,
           outputTokenDenom: swapToken1.denom,
           outputTokenName: swapToken1.name,
+          // gasFeeAmount: boltSwapTxFees.gasFee,
+          // gasFeeTokenDenom: swapResult.gasFeeToken.denom,
+          // gasFeeTokenName: swapResult.gasFeeToken.name,
           txHash: swapResult.txHash,
           successful: true,
         });
 
         console.log(`Swap complete. Tx: ${swapResult.txHash}`);
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for balances to update
       }
     }
 
     // Refresh balances after swap (or if no swap was needed)
     const finalBalances = await this.getSuiAccountBalances();
+    
     const finalBalance0 =
       finalBalances[token0.denom] ?? new TokenAmount(0, token0);
     const finalBalance1 =
@@ -515,79 +532,244 @@ export class SuiLiquidityManager {
       token1.decimals
     );
 
-    // Convert refreshed price to smallest on-chain units for calculations
+    // Recalculate price range with refreshed price
+    const refreshedLowerPrice = BigNumber(refreshedPriceHumanReadable)
+      .times(BigNumber(1).minus(bandPercentage))
+      .toFixed(token1.decimals);
+    const refreshedUpperPrice = BigNumber(refreshedPriceHumanReadable)
+      .times(BigNumber(1).plus(bandPercentage))
+      .toFixed(token1.decimals);
+
+    console.log(
+      `Available safe balances after swap: ${safeBalance0Final.humanReadableAmount} ${token0.name}, ${safeBalance1Final.humanReadableAmount} ${token1.name}`
+    );
+    console.log(
+      `Refreshed price range: ${refreshedLowerPrice} - ${refreshedUpperPrice} (current: ${refreshedPriceHumanReadable.toString()})`
+    );
+
+    // Recalculate ideal amounts with new balances and refreshed price
+    // Step 1: Calculate total safe value in token0 terms (using smallest units)
     const refreshedPrice = BigNumber(refreshedPriceHumanReadable).shiftedBy(
       token1.decimals - token0.decimals
     );
 
-    // Recalculate ideal amounts with new balances and price after swaps
-    // Step 1: Calculate total safe value in token0 terms (using smallest units)
-    const finalValue0 = BigNumber(safeBalance0Final.amount);
-    const finalValue1 = BigNumber(safeBalance1Final.amount).div(refreshedPrice);
-    const finalTotalValue = finalValue0.plus(finalValue1);
+    const finalSafeToken0Amount = BigNumber(safeBalance0Final.amount);
+    const finalSafeToken1Amount = BigNumber(safeBalance1Final.amount);
 
-    // Step 2: Calculate ideal token0 with 1% slippage: idealToken0 = totalValue * 100 / 201
-    const finalIdealAmount0 = finalTotalValue.times(100).div(201);
-
-    // Step 3: Apply constraint - can't use more token0 than we have
-    // Also ensure we have enough token1 with slippage: idealToken0 * price * 1.01 <= safeBalance1Final
-    const maxToken0BasedOnToken1Final = BigNumber(
-      safeBalance1Final.amount
-    ).times(refreshedPrice.times(BigNumber(1).plus(positionSlippage)));
-
-    // Conservative token0 amount is the minimum of:
-    // - Ideal amount from total value calculation (finalIdealAmount0)
-    // - Maximum safe token0 based on token1 availability
-    // - Available token0
-    const conservativeToken0Amount = BigNumber.min(
-      finalIdealAmount0,
-      maxToken0BasedOnToken1Final,
-      BigNumber(safeBalance0Final.amount)
-    ).toFixed(0);
-
-    console.log(
-      `Available balances: ${safeBalance0Final.humanReadableAmount} ${token0.name}, ${safeBalance1Final.humanReadableAmount} ${token1.name}`
+    // Convert token1 to token0 terms using refreshed price
+    const finalToken1ValueInToken0 = finalSafeToken1Amount.div(refreshedPrice);
+    const finalTotalValueInToken0 = finalSafeToken0Amount.plus(
+      finalToken1ValueInToken0
     );
+
     console.log(
-      `Max token0 based on token1 availability (with 1% slippage): ${
-        new TokenAmount(maxToken0BasedOnToken1Final.toFixed(0), token0)
+      `Total safe value after swap in ${token0.name} terms: ${
+        new TokenAmount(finalTotalValueInToken0.toFixed(0), token0)
           .humanReadableAmount
       } ${token0.name}`
     );
+
+    // Step 2: Calculate ideal amounts considering 1% slippage
+    const finalIdealAmount0 = finalTotalValueInToken0.times(100).div(201);
+    const finalIdealAmount1 = finalIdealAmount0
+      .times(refreshedPrice)
+      .times(1.01);
+
     console.log(
-      `Using conservative token0 amount: ${
-        new TokenAmount(conservativeToken0Amount, token0).humanReadableAmount
-      } ${token0.name}`
+      `Ideal amounts after swap (with 1% slippage): ${
+        new TokenAmount(finalIdealAmount0.toFixed(0), token0)
+          .humanReadableAmount
+      } ${token0.name}, ${
+        new TokenAmount(finalIdealAmount1.toFixed(0), token1)
+          .humanReadableAmount
+      } ${token1.name}`
     );
 
-    const rangeParams: CustomRangeParams = {
+    // Now use SDK to find the optimal token0 amount that fits within available balances
+    const finalRangeParams: CustomRangeParams = {
       is_full_range: false,
-      min_price: lowerPrice,
-      max_price: upperPrice,
+      min_price: refreshedLowerPrice,
+      max_price: refreshedUpperPrice,
       coin_decimals_a: token0.decimals,
       coin_decimals_b: token1.decimals,
       price_base_coin: "coin_a",
     };
 
-    // Calculate liquidity result - position creator will use the conservative token0 amount
-    // and calculate token1 needed (with 1% slippage already configured)
-    // This ensures we have enough token1 even if slippage causes it to need 1% more
-    const calculateResult =
-      await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
-        add_mode_params: rangeParams,
-        pool_id: pool.id,
-        slippage: 0.01,
-        coin_amount: conservativeToken0Amount,
-        fix_amount_a: true,
-      });
+    // Start with ideal amount, but ensure it fits within available balances
+    let optimalFinalToken0 = BigNumber.min(
+      finalIdealAmount0,
+      finalSafeToken0Amount
+    );
+    let calculateResult: CalculateAddLiquidityResult;
 
-    // Create payload
-    const payload =
-      await this.cetusSdk.Position.createAddLiquidityFixCoinWithPricePayload({
-        pool_id: pool.id,
-        calculate_result: calculateResult,
-        add_mode_params: rangeParams,
-      });
+    try {
+      // Calculate with ideal amount
+      calculateResult =
+        await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+          add_mode_params: finalRangeParams,
+          pool_id: pool.id,
+          slippage: 0.01,
+          coin_amount: optimalFinalToken0.toFixed(0),
+          fix_amount_a: true,
+        });
+
+      const requiredToken1ForOptimal = BigNumber(
+        calculateResult.coin_amount_limit_b
+      );
+
+      // If we need more token1 than available, reduce token0 using binary search
+      if (
+        requiredToken1ForOptimal.gt(finalSafeToken1Amount) &&
+        !requiredToken1ForOptimal.eq(0)
+      ) {
+        let low = BigNumber(0);
+        let high = optimalFinalToken0;
+        let bestToken0 = BigNumber(0);
+        let bestToken1Usage = BigNumber(0);
+        let bestResult: CalculateAddLiquidityResult | null = null;
+
+        for (let i = 0; i < 20; i++) {
+          const mid = low.plus(high).div(2);
+          try {
+            const testResult =
+              await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice(
+                {
+                  add_mode_params: finalRangeParams,
+                  pool_id: pool.id,
+                  slippage: 0.01,
+                  coin_amount: mid.toFixed(0),
+                  fix_amount_a: true,
+                }
+              );
+
+            const testToken1 = BigNumber(testResult.coin_amount_limit_b);
+
+            if (
+              testToken1.lte(finalSafeToken1Amount) &&
+              testToken1.gt(bestToken1Usage)
+            ) {
+              bestToken0 = mid;
+              bestToken1Usage = testToken1;
+              bestResult = testResult;
+              low = mid;
+            } else {
+              high = mid;
+            }
+          } catch (e) {
+            high = mid;
+          }
+        }
+
+        if (bestToken0.gt(0)) {
+          optimalFinalToken0 = bestToken0;
+          calculateResult = bestResult!;
+          console.log(
+            `Found optimal amounts: ${
+              new TokenAmount(optimalFinalToken0.toFixed(0), token0)
+                .humanReadableAmount
+            } ${token0.name}, ${
+              new TokenAmount(bestToken1Usage.toFixed(0), token1)
+                .humanReadableAmount
+            } ${token1.name}`
+          );
+        } else {
+          // Fallback: use simple ratio
+          optimalFinalToken0 = finalSafeToken1Amount
+            .div(BigNumber(refreshedUpperPrice))
+            .times(0.99);
+          optimalFinalToken0 = BigNumber.min(
+            optimalFinalToken0,
+            finalSafeToken0Amount
+          );
+          calculateResult =
+            await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+              add_mode_params: finalRangeParams,
+              pool_id: pool.id,
+              slippage: 0.01,
+              coin_amount: optimalFinalToken0.toFixed(0),
+              fix_amount_a: true,
+            });
+        }
+      } else {
+        console.log(
+          `Using ideal token0 amount: ${
+            new TokenAmount(optimalFinalToken0.toFixed(0), token0)
+              .humanReadableAmount
+          } ${token0.name}`
+        );
+      }
+    } catch (error) {
+      // If calculation fails, use ideal amount or fallback
+      console.warn(
+        "Could not calculate optimal final amounts, using ideal amount"
+      );
+      optimalFinalToken0 = BigNumber.min(
+        finalIdealAmount0,
+        finalSafeToken0Amount
+      );
+      calculateResult =
+        await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+          add_mode_params: finalRangeParams,
+          pool_id: pool.id,
+          slippage: 0.01,
+          coin_amount: optimalFinalToken0.toFixed(0),
+          fix_amount_a: true,
+        });
+    }
+
+    let adjustedToken0Amount = optimalFinalToken0;
+
+    // Create payload - if this fails due to insufficient balance, retry with smaller amount
+    let payload: any;
+    let payloadCreationAttempts = 0;
+    const maxPayloadAttempts = 5;
+
+    while (payloadCreationAttempts < maxPayloadAttempts) {
+      try {
+        payload =
+          await this.cetusSdk.Position.createAddLiquidityFixCoinWithPricePayload(
+            {
+              pool_id: pool.id,
+              calculate_result: calculateResult,
+              add_mode_params: finalRangeParams,
+            }
+          );
+        break; // Success, exit loop
+      } catch (error: any) {
+        // If error is about insufficient balance, reduce token0 and retry
+        if (
+          error?.message?.includes("Insufficient balance") ||
+          error?.message?.includes("expect")
+        ) {
+          payloadCreationAttempts++;
+          console.warn(
+            `Payload creation failed due to insufficient balance (attempt ${payloadCreationAttempts}/${maxPayloadAttempts}). Reducing token0 amount...`
+          );
+
+          // Reduce token0 by 20% and recalculate
+          adjustedToken0Amount = adjustedToken0Amount.times(0.8);
+
+          if (payloadCreationAttempts >= maxPayloadAttempts) {
+            throw new Error(
+              `Could not create payload after ${maxPayloadAttempts} attempts. Last error: ${error.message}`
+            );
+          }
+
+          // Recalculate with reduced amount
+          calculateResult =
+            await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+              add_mode_params: finalRangeParams,
+              pool_id: pool.id,
+              slippage: 0.01,
+              coin_amount: adjustedToken0Amount.toFixed(0),
+              fix_amount_a: true,
+            });
+        } else {
+          // Different error, throw it
+          throw error;
+        }
+      }
+    }
 
     // Execute transaction
     const txResult = await this.cetusSdk.FullClient.executeTx(
@@ -595,6 +777,12 @@ export class SuiLiquidityManager {
       payload,
       false
     );
+
+    if (!txResult || !txResult.events) {
+      throw new Error(
+        "Transaction execution failed or returned invalid result"
+      );
+    }
 
     // Extract position ID from events
     const openPositionEvent = txResult.events.find(
