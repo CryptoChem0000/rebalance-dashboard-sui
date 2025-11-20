@@ -13,11 +13,11 @@ import { getPairPriceOnOsmosis } from "../prices";
 import { findOsmosisTokensMap, RegistryToken } from "../registry";
 import { OsmosisTickMath } from "./tick-math";
 import {
-  extractGasFees,
   getSignerAddress,
   parseCoinToTokenAmount,
 } from "../utils";
 import {
+  extractGasFees,
   extractPositionInfoResponse,
   extractRewardsCollected,
   simulateFees,

@@ -33,6 +33,16 @@ export const SUI_MAINNET_TOKENS_MAP: Record<string, RegistryToken> = {
       logo: "https://raw.githubusercontent.com/cosmos/chain-registry/refs/heads/master/_non-cosmos/ethereum/images/usdc.png",
       coingeckoId: "usd-coin",
     },
+  "06864a6f921804860930db6ddbe2e16acdf8504495ea7481637a1c8b9a8fe54b::cetus::CETUS":
+    {
+      chainId: "101",
+      denom:
+        "06864a6f921804860930db6ddbe2e16acdf8504495ea7481637a1c8b9a8fe54b::cetus::CETUS",
+      name: "CETUS",
+      decimals: 9,
+      logo: "https://strapi-dev.scand.app/uploads/Cetus_fd3e9a7dbd.png",
+      coingeckoId: "cetus-protocol",
+    },
 };
 
 export const DEFAULT_SUI_TESTNET_RPC_ENDPOINT =

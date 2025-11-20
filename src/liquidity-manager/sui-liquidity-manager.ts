@@ -9,7 +9,9 @@ import {
 } from "@cetusprotocol/sui-clmm-sdk";
 import { BoltSuiClient } from "@bolt-liquidity-hq/sui-client";
 import { TickMath } from "@cetusprotocol/common-sdk";
-import { normalizeStructTag, SUI_TYPE_ARG } from "@mysten/sui/utils";
+import { SuiTransactionBlockResponse } from "@mysten/sui/client";
+import { Transaction } from "@mysten/sui/transactions";
+import { normalizeStructTag } from "@mysten/sui/utils";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { SuiAccount, TokenAmount } from "../account-balances";
@@ -270,7 +272,7 @@ export class SuiLiquidityManager {
 
     // If any token is native (SUI), discount 0.1 SUI for gas
     const GAS_RESERVE = BigNumber(0.15).times(10 ** 9); // 0.15 SUI in smallest unit
-    const nativeTokenDenom = normalizeStructTag(SUI_TYPE_ARG);
+    const nativeTokenDenom = this.chainInfo.nativeToken.denom;
 
     // Create safe balances for calculations (with gas reserve deducted)
     let safeBalance0 = balance0;
@@ -471,6 +473,11 @@ export class SuiLiquidityManager {
           this.signer
         );
 
+        const swapGasFees = this.extractGasFees(
+          swapResult.txOutput,
+          this.chainInfo.nativeToken
+        );
+
         // Log swap transaction
         this.database.addTransaction({
           signerAddress: this.address,
@@ -484,9 +491,9 @@ export class SuiLiquidityManager {
             .humanReadableAmount,
           outputTokenDenom: swapToken1.denom,
           outputTokenName: swapToken1.name,
-          // gasFeeAmount: boltSwapTxFees.gasFee,
-          // gasFeeTokenDenom: swapResult.gasFeeToken.denom,
-          // gasFeeTokenName: swapResult.gasFeeToken.name,
+          gasFeeAmount: swapGasFees.humanReadableAmount,
+          gasFeeTokenDenom: swapGasFees.token.denom,
+          gasFeeTokenName: swapGasFees.token.name,
           txHash: swapResult.txHash,
           successful: true,
         });
@@ -498,7 +505,7 @@ export class SuiLiquidityManager {
 
     // Refresh balances after swap (or if no swap was needed)
     const finalBalances = await this.getSuiAccountBalances();
-    
+
     const finalBalance0 =
       finalBalances[token0.denom] ?? new TokenAmount(0, token0);
     const finalBalance1 =
@@ -720,7 +727,7 @@ export class SuiLiquidityManager {
     let adjustedToken0Amount = optimalFinalToken0;
 
     // Create payload - if this fails due to insufficient balance, retry with smaller amount
-    let payload: any;
+    let payload: Transaction;
     let payloadCreationAttempts = 0;
     const maxPayloadAttempts = 5;
 
@@ -774,7 +781,7 @@ export class SuiLiquidityManager {
     // Execute transaction
     const txResult = await this.cetusSdk.FullClient.executeTx(
       this.signer,
-      payload,
+      payload!,
       false
     );
 
@@ -804,6 +811,11 @@ export class SuiLiquidityManager {
     const lowerTick = addLiquidityEvent?.parsedJson?.tick_lower?.value || "0";
     const upperTick = addLiquidityEvent?.parsedJson?.tick_upper?.value || "0";
 
+    const createPositionGasFees = this.extractGasFees(
+      txResult,
+      this.chainInfo.nativeToken
+    );
+
     // Log position creation transaction
     this.database.addTransaction({
       signerAddress: this.address,
@@ -816,6 +828,9 @@ export class SuiLiquidityManager {
       secondInputAmount: new TokenAmount(amountB, token1).humanReadableAmount,
       secondInputTokenDenom: token1.denom,
       secondInputTokenName: token1.name,
+      gasFeeAmount: createPositionGasFees.humanReadableAmount,
+      gasFeeTokenDenom: createPositionGasFees.token.denom,
+      gasFeeTokenName: createPositionGasFees.token.name,
       txHash: txResult.digest,
       successful: true,
     });
@@ -944,18 +959,60 @@ export class SuiLiquidityManager {
     );
 
     // Extract amounts from events
-    const removeLiquidityEvent = txResult.events.find((e: any) =>
-      e.type?.includes("RemoveLiquidity")
-    );
-    const amountA = removeLiquidityEvent?.parsedJson?.amount_a || "0";
-    const amountB = removeLiquidityEvent?.parsedJson?.amount_b || "0";
+    let liquidityAmountA = BigNumber(0);
+    let liquidityAmountB = BigNumber(0);
+    let rewardsAmountA = BigNumber(0);
+    let rewardsAmountB = BigNumber(0);
+    const otherRewards: TokenAmount[] = [];
 
-    // Extract fee collection if any
-    const collectFeeEvent = txResult.events.find((e: any) =>
-      e.type?.includes("CollectFee")
+    for (const event of txResult.events) {
+      if (event.type?.includes("RemoveLiquidity")) {
+        liquidityAmountA = liquidityAmountA.plus(
+          event.parsedJson?.amount_a || 0
+        );
+        liquidityAmountB = liquidityAmountB.plus(
+          event.parsedJson?.amount_b || 0
+        );
+      }
+      if (event.type?.includes("CollectFee")) {
+        rewardsAmountA = rewardsAmountA.plus(event.parsedJson?.amount_a || 0);
+        rewardsAmountB = rewardsAmountB.plus(event.parsedJson?.amount_b || 0);
+      }
+      if (event.type?.includes("CollectReward")) {
+        const registryToken =
+          this.tokensMap[
+            normalizeStructTag(event.parsedJson?.rewarder_type?.name || "")
+          ];
+        if (registryToken) {
+          if (registryToken.denom === token0.denom) {
+            rewardsAmountA = rewardsAmountA.plus(event.parsedJson?.amount || 0);
+          } else if (registryToken.denom === token1.denom) {
+            rewardsAmountB = rewardsAmountB.plus(event.parsedJson?.amount || 0);
+          } else {
+            let found = false;
+            for (const item of otherRewards) {
+              if (item.token.denom === registryToken.denom) {
+                item.amount = BigNumber(item.amount)
+                  .plus(event.parsedJson?.amount || 0)
+                  .toFixed(0);
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              otherRewards.push(
+                new TokenAmount(event.parsedJson?.amount || 0, registryToken)
+              );
+            }
+          }
+        }
+      }
+    }
+
+    const withdrawPositionGasFees = this.extractGasFees(
+      txResult,
+      this.chainInfo.nativeToken
     );
-    const feeAmountA = collectFeeEvent?.parsedJson?.amount_a || "0";
-    const feeAmountB = collectFeeEvent?.parsedJson?.amount_b || "0";
 
     // Log withdrawal transaction
     const transactions: AccountTransaction[] = [
@@ -964,48 +1021,76 @@ export class SuiLiquidityManager {
         chainId: this.chainInfo.id,
         transactionType: TransactionType.WITHDRAW_POSITION,
         positionId: this.config.cetusPosition.id,
-        outputAmount: new TokenAmount(amountA, token0).humanReadableAmount,
+        outputAmount: new TokenAmount(liquidityAmountA, token0)
+          .humanReadableAmount,
         outputTokenDenom: token0.denom,
         outputTokenName: token0.name,
-        secondOutputAmount: new TokenAmount(amountB, token1)
+        secondOutputAmount: new TokenAmount(liquidityAmountB, token1)
           .humanReadableAmount,
         secondOutputTokenDenom: token1.denom,
         secondOutputTokenName: token1.name,
+        gasFeeAmount: withdrawPositionGasFees.humanReadableAmount,
+        gasFeeTokenDenom: withdrawPositionGasFees.token.denom,
+        gasFeeTokenName: withdrawPositionGasFees.token.name,
         txHash: txResult.digest,
         successful: true,
       },
-    ];
-
-    // Add fee collection transaction if fees were collected
-    if (
-      (feeAmountA && BigNumber(feeAmountA).gt(0)) ||
-      (feeAmountB && BigNumber(feeAmountB).gt(0))
-    ) {
-      transactions.push({
+      {
         signerAddress: this.address,
         chainId: this.chainInfo.id,
         transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
         positionId: this.config.cetusPosition.id,
-        outputAmount: new TokenAmount(feeAmountA, token0).humanReadableAmount,
+        outputAmount: new TokenAmount(rewardsAmountA, token0)
+          .humanReadableAmount,
         outputTokenDenom: token0.denom,
         outputTokenName: token0.name,
-        secondOutputAmount: new TokenAmount(feeAmountB, token1)
+        secondOutputAmount: new TokenAmount(rewardsAmountB, token1)
           .humanReadableAmount,
         secondOutputTokenDenom: token1.denom,
         secondOutputTokenName: token1.name,
         txHash: txResult.digest,
         txActionIndex: 1,
         successful: true,
-      });
+      },
+    ];
+
+    // Add fee collection transaction if fees were collected
+    for (let i = 0; i < otherRewards.length; i++) {
+      const reward = otherRewards[i];
+      if (reward) {
+        transactions.push({
+          signerAddress: this.address,
+          chainId: this.chainInfo.id,
+          transactionType: TransactionType.COLLECT_SPREAD_REWARDS,
+          positionId: this.config.cetusPosition.id,
+          outputAmount: reward.humanReadableAmount,
+          outputTokenDenom: reward.token.denom,
+          outputTokenName: reward.token.name,
+          txHash: txResult.digest,
+          txActionIndex: i + 2,
+          successful: true,
+        });
+      }
     }
 
     this.database.addTransactionBatch(transactions);
 
+    const totalToken0Withdrawn = new TokenAmount(
+      BigNumber(liquidityAmountA).plus(rewardsAmountA).toFixed(0),
+      token0
+    );
+    const totalToken1Withdrawn = new TokenAmount(
+      BigNumber(liquidityAmountB).plus(rewardsAmountB).toFixed(0),
+      token1
+    );
+
     console.log(
-      `Withdrew ${new TokenAmount(amountA, token0).humanReadableAmount} ${
+      `Withdrew ${totalToken0Withdrawn.humanReadableAmount} ${
         token0.name
-      } and ${new TokenAmount(amountB, token1).humanReadableAmount} ${
-        token1.name
+      } and ${totalToken1Withdrawn.humanReadableAmount} ${token1.name}${
+        otherRewards.length > 0
+          ? ` and ${otherRewards.length} other rewards`
+          : ""
       }`
     );
 
@@ -1014,8 +1099,8 @@ export class SuiLiquidityManager {
     await this.saveConfig();
 
     return {
-      amount0Withdrawn: new TokenAmount(amountA, token0),
-      amount1Withdrawn: new TokenAmount(amountB, token1),
+      amount0Withdrawn: totalToken0Withdrawn,
+      amount1Withdrawn: totalToken1Withdrawn,
     };
   }
 
@@ -1030,5 +1115,19 @@ export class SuiLiquidityManager {
       JSON.stringify(this.config, undefined, 2),
       "utf-8"
     );
+  }
+
+  // TODO: move to utils folder when we separate everything into smaller files
+  private extractGasFees(
+    txResponse: SuiTransactionBlockResponse,
+    nativeToken: RegistryToken
+  ): TokenAmount {
+    const totalGasFee = BigNumber(
+      txResponse?.effects?.gasUsed.computationCost ?? 0
+    )
+      .plus(txResponse?.effects?.gasUsed.storageCost ?? 0)
+      .minus(txResponse?.effects?.gasUsed.storageRebate ?? 0);
+
+    return new TokenAmount(totalGasFee, nativeToken);
   }
 }
