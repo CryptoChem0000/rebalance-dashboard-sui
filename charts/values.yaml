@@ -26,10 +26,11 @@ secrets:
       # These will be set from GitHub Actions
       DATABASE_URL: ""
       MNEMONIC: ""
-      OSMOSIS_POOL_ID: ""
+      POOL_ID: ""
       REBALANCE_THRESHOLD_PERCENT: ""
-      OSMOSIS_POSITION_BAND_PERCENTAGE: ""
+      POSITION_BAND_PERCENTAGE: ""
       WATCH_FREQUENCY: ""
+      CHAIN: ""
 
 healthCheck:
   initialDelaySeconds: 120

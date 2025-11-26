@@ -1,12 +1,7 @@
 import { Command } from "commander";
 
 import { DatabaseQueryClient } from "../../database";
-import {
-  formatDateRange,
-  getAddress,
-  parseDateOptions,
-  withDatabase,
-} from "../helpers";
+import { formatDateRange, parseDateOptions, withDatabase } from "../helpers";
 
 export function volumeCommand(program: Command) {
   program
@@ -27,21 +22,14 @@ export function volumeCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
-        const address = await getAddress();
         const { startDate, endDate } = parseDateOptions(options);
 
         formatDateRange(startDate, endDate);
 
-        await displayVolumes(db, address, options.type, startDate, endDate);
+        await displayVolumes(db, options.type, startDate, endDate);
 
         if (options.csv) {
-          await exportVolumeToCSV(
-            db,
-            address,
-            options.type,
-            startDate,
-            endDate
-          );
+          await exportVolumeToCSV(db, options.type, startDate, endDate);
         }
       });
     });
@@ -49,7 +37,6 @@ export function volumeCommand(program: Command) {
 
 async function displayVolumes(
   db: DatabaseQueryClient,
-  signerAddress: string,
   type: string,
   startDate?: Date,
   endDate?: Date
@@ -58,7 +45,7 @@ async function displayVolumes(
     console.log("🔄 Archway Bolt Volume:");
     console.log("─".repeat(60));
     const archwayVolume = await db.getArchwayBoltVolume(
-      signerAddress,
+      undefined,
       startDate,
       endDate
     );
@@ -70,7 +57,7 @@ async function displayVolumes(
     console.log("🌊 Osmosis Volume:");
     console.log("─".repeat(60));
     const osmosisVolume = await db.getOsmosisVolume(
-      signerAddress,
+      undefined,
       startDate,
       endDate
     );
@@ -82,7 +69,7 @@ async function displayVolumes(
     console.log("🌉 Bridge Volume:");
     console.log("─".repeat(60));
     const bridgeVolume = await db.getBridgeVolume(
-      signerAddress,
+      undefined,
       startDate,
       endDate
     );
@@ -93,7 +80,6 @@ async function displayVolumes(
 
 async function exportVolumeToCSV(
   db: DatabaseQueryClient,
-  signerAddress: string,
   type: string,
   startDate?: Date,
   endDate?: Date
@@ -101,7 +87,7 @@ async function exportVolumeToCSV(
   console.log("\n📁 Exporting to CSV file(s)...");
   const files = await db.exportVolumeToCSV(
     type as "archway" | "osmosis" | "bridge" | "all",
-    signerAddress,
+    undefined,
     startDate,
     endDate
   );

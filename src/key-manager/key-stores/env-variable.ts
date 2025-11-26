@@ -169,11 +169,11 @@ export class EnvVariableKeyStore extends AbstractKeyStore<string> {
    * @example
    * ```typescript
    * // Get Cosmos address
-   * const cosmosAddr = await keyStore.getAddress('WALLET_MAIN', 'cosmos');
+   * const cosmosAddr = await keyStore.getCosmWasmAddress('WALLET_MAIN', 'cosmos');
    * console.log('Cosmos address:', cosmosAddr);
    *
    * // Get Injective address (uses special derivation)
-   * const injAddr = await keyStore.getAddress('WALLET_MAIN', 'inj');
+   * const injAddr = await keyStore.getCosmWasmAddress('WALLET_MAIN', 'inj');
    * console.log('Injective address:', injAddr);
    * ```
    */

@@ -1,127 +1,100 @@
 import { OfflineSigner } from "@cosmjs/proto-signing";
 import { BigNumber } from "bignumber.js";
-import { Pool } from "osmojs/osmosis/concentratedliquidity/v1beta1/pool";
 import {
   MsgCreatePositionResponse,
   MsgWithdrawPositionResponse,
 } from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
-import { MsgCreateConcentratedPoolResponse } from "osmojs/osmosis/concentratedliquidity/poolmodel/concentrated/v1beta1/tx";
 import { SpotPriceResponse } from "osmojs/osmosis/poolmanager/v1beta1/query";
-import { osmosis } from "osmojs";
+import { getSigningOsmosisClient, osmosis } from "osmojs";
 
-import { getPairPriceOnOsmosis } from "../prices";
-import { findOsmosisTokensMap, RegistryToken } from "../registry";
-import { OsmosisTickMath } from "./tick-math";
 import {
-  getSignerAddress,
-  parseCoinToTokenAmount,
-} from "../utils";
+  CreatePositionResult,
+  PositionRangeResult,
+  WithdrawPositionResult,
+} from "../liquidity-manager";
+import {
+  DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT,
+  DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT,
+  findOsmosisTokensMap,
+  RegistryToken,
+} from "../registry";
+import { OsmosisTickMath } from "./tick-math";
+import { getSignerAddress, parseCoinToTokenAmount } from "../utils";
 import {
   extractGasFees,
   extractPositionInfoResponse,
   extractRewardsCollected,
+  getPoolInfoResponse,
   simulateFees,
 } from "./utils";
 
 import {
   AuthorizedTickSpacing,
-  CreatePoolParams,
-  CreatePoolResponse,
   CreatePositionParams,
-  CreatePositionResponse,
   OsmosisQueryClient,
   OsmosisSigningClient,
   PoolInfoResponse,
   PositionInfoResponse,
-  PositionRangeResult,
   WithdrawPositionParams,
-  WithdrawPositionResponse,
 } from "./types";
 
-export class OsmosisCLPool {
-  public token0?: string;
-  public token1?: string;
-  public tokensMap: Record<string, RegistryToken>;
-
+export class OsmosisCLPoolManager {
   constructor(
-    public poolId: string,
     public queryClient: OsmosisQueryClient,
     public signer: OfflineSigner,
     public signingClient: OsmosisSigningClient,
-    public environment: "mainnet" | "testnet" = "mainnet",
-    token0?: string,
-    token1?: string
-  ) {
-    this.token0 = token0;
-    this.token1 = token1;
-    this.tokensMap = findOsmosisTokensMap(this.environment);
-  }
+    public poolId: string,
+    public token0: RegistryToken,
+    public token1: RegistryToken,
+    public tokensMap: Record<string, RegistryToken>,
+    public poolInfo: PoolInfoResponse
+  ) {}
 
-  static async createPool(
-    queryClient: OsmosisQueryClient,
+  static async make(
     signer: OfflineSigner,
-    signingClient: OsmosisSigningClient,
-    params: CreatePoolParams,
-    memo: string = ""
-  ): Promise<CreatePoolResponse> {
-    const sender = await getSignerAddress(signer);
+    poolId: string,
+    environment: "mainnet" | "testnet" = "mainnet",
+    rpcEndpoint?: string
+  ): Promise<OsmosisCLPoolManager> {
+    const finalRpcEndpoint =
+      rpcEndpoint ??
+      (environment === "mainnet"
+        ? DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT
+        : DEFAULT_OSMOSIS_TESTNET_RPC_ENDPOINT);
+    const queryClient = await osmosis.ClientFactory.createRPCQueryClient({
+      rpcEndpoint: finalRpcEndpoint,
+    });
+    const signingClient = await getSigningOsmosisClient({
+      rpcEndpoint: finalRpcEndpoint,
+      signer: signer,
+    });
 
-    const msg =
-      osmosis.concentratedliquidity.poolmodel.concentrated.v1beta1.MessageComposer.withTypeUrl.createConcentratedPool(
-        {
-          denom0: params.token0,
-          denom1: params.token1,
-          sender,
-          spreadFactor: BigNumber(params.spreadFactor).toFixed(),
-          tickSpacing: BigInt(params.tickSpacing),
-        }
-      );
+    const poolInfo = await getPoolInfoResponse(poolId, queryClient);
 
-    const fees = await simulateFees(signingClient, sender, [msg], memo);
+    const tokensMap = findOsmosisTokensMap(environment);
+    const token0Registry = tokensMap[poolInfo.token0];
+    const token1Registry = tokensMap[poolInfo.token1];
 
-    const response = await signingClient.signAndBroadcast(
-      sender,
-      [msg],
-      fees,
-      memo
-    );
-
-    if (!response.msgResponses?.[0]?.value) {
-      throw new Error("No valid response from the Create Pool transaction");
+    if (!token0Registry || !token1Registry) {
+      throw new Error("Pool tokens not found in registry");
     }
 
-    const parsedResponse = MsgCreateConcentratedPoolResponse.decode(
-      response.msgResponses[0].value
-    );
-
-    const newPoolId = BigNumber(parsedResponse.poolId).toFixed();
-
-    const environmentValue = params.environment ?? "mainnet";
-
-    const pool = new OsmosisCLPool(
-      newPoolId,
+    return new OsmosisCLPoolManager(
       queryClient,
       signer,
       signingClient,
-      environmentValue,
-      params.token0,
-      params.token1
+      poolId,
+      token0Registry,
+      token1Registry,
+      tokensMap,
+      poolInfo
     );
-
-    const tokensMap = findOsmosisTokensMap(environmentValue);
-
-    return {
-      pool,
-      txHash: response.transactionHash,
-      gasFees: extractGasFees(response, tokensMap),
-    };
   }
 
   async createPosition(
     params: CreatePositionParams,
     memo: string = ""
-  ): Promise<CreatePositionResponse> {
-    const { token0, token1 } = await this.getToken0Token1();
+  ): Promise<CreatePositionResult> {
     const sender = await getSignerAddress(this.signer);
 
     const msg =
@@ -161,14 +134,14 @@ export class OsmosisCLPool {
       tokenAmount0: parseCoinToTokenAmount(
         {
           amount: parsedResponse.amount0,
-          denom: token0,
+          denom: this.token0.denom,
         },
         this.tokensMap
       ),
       tokenAmount1: parseCoinToTokenAmount(
         {
           amount: parsedResponse.amount1,
-          denom: token1,
+          denom: this.token1.denom,
         },
         this.tokensMap
       ),
@@ -183,8 +156,7 @@ export class OsmosisCLPool {
   async withdrawPosition(
     params: WithdrawPositionParams,
     memo: string = ""
-  ): Promise<WithdrawPositionResponse> {
-    const { token0, token1 } = await this.getToken0Token1();
+  ): Promise<WithdrawPositionResult> {
     const sender = await getSignerAddress(this.signer);
 
     const msg =
@@ -219,14 +191,14 @@ export class OsmosisCLPool {
       tokenAmount0: parseCoinToTokenAmount(
         {
           amount: parsedResponse.amount0,
-          denom: token0,
+          denom: this.token0.denom,
         },
         this.tokensMap
       ),
       tokenAmount1: parseCoinToTokenAmount(
         {
           amount: parsedResponse.amount1,
-          denom: token1,
+          denom: this.token1.denom,
         },
         this.tokensMap
       ),
@@ -237,47 +209,14 @@ export class OsmosisCLPool {
   }
 
   async getPoolInfo(): Promise<PoolInfoResponse> {
-    const response = await this.queryClient.osmosis.poolmanager.v1beta1.pool({
-      poolId: BigInt(this.poolId),
-    });
-
-    if (
-      response.pool?.$typeUrl !== "/osmosis.concentratedliquidity.v1beta1.Pool"
-    ) {
-      throw new Error(
-        `Pool ${this.poolId} isn't a Concentrated Liquidity Pool`
-      );
-    }
-
-    const pool = response.pool as Pool;
-
-    this.token0 = pool.token0;
-    this.token1 = pool.token1;
-
-    return {
-      address: pool.address,
-      incentivesAddress: pool.incentivesAddress,
-      spreadRewardsAddress: pool.spreadRewardsAddress,
-      id: BigNumber(pool.id).toFixed(),
-      currentTickLiquidity: pool.currentTickLiquidity,
-      token0: pool.token0,
-      token1: pool.token1,
-      currentSqrtPrice: pool.currentSqrtPrice,
-      currentTick: BigNumber(pool.currentTick).toFixed(),
-      tickSpacing: BigNumber(pool.tickSpacing).toFixed(),
-      exponentAtPriceOne: BigNumber(pool.exponentAtPriceOne).toFixed(),
-      spreadFactor: pool.spreadFactor,
-      lastLiquidityUpdate: pool.lastLiquidityUpdate,
-    };
+    return await getPoolInfoResponse(this.poolId, this.queryClient);
   }
 
   async getPoolSpotPrice(): Promise<SpotPriceResponse> {
-    const { token0, token1 } = await this.getToken0Token1();
-
     return await this.queryClient.osmosis.poolmanager.v1beta1.spotPrice({
       poolId: BigInt(this.poolId),
-      baseAssetDenom: token0,
-      quoteAssetDenom: token1,
+      baseAssetDenom: this.token0.denom,
+      quoteAssetDenom: this.token1.denom,
     });
   }
 
@@ -306,6 +245,17 @@ export class OsmosisCLPool {
     return result.positions.map((item) => extractPositionInfoResponse(item));
   }
 
+  async getPoolPrice(): Promise<string> {
+    const poolInfo =
+      await this.queryClient.osmosis.poolmanager.v1beta1.spotPrice({
+        poolId: BigInt(this.poolId),
+        baseAssetDenom: this.token0.denom,
+        quoteAssetDenom: this.token1.denom,
+      });
+
+    return poolInfo.spotPrice;
+  }
+
   async isPositionInRange(
     positionId: string,
     percentageThreshold: number
@@ -317,26 +267,13 @@ export class OsmosisCLPool {
       throw new Error("Position balance threshold must be between 50 and 100");
     }
 
-    const { token0, token1 } = await this.getToken0Token1();
-
     const poolInfo = await this.getPoolInfo();
     const positionInfo = await this.getPositionInfo(positionId);
 
     const lower = new BigNumber(positionInfo.position.lowerTick);
     const upper = new BigNumber(positionInfo.position.upperTick);
 
-    const token0Registry = this.tokensMap[token0];
-    const token1Registry = this.tokensMap[token1];
-
-    if (!token0Registry || !token1Registry) {
-      throw new Error("Token from pair not found on our registry");
-    }
-
-    const currentPrice = await getPairPriceOnOsmosis(
-      token0Registry,
-      token1Registry,
-      this.environment
-    );
+    const currentPrice = await this.getPoolPrice();
 
     // Current tick
     const current = new BigNumber(
@@ -381,21 +318,6 @@ export class OsmosisCLPool {
     return {
       isInRange: !exceededLowerThreshold && !exceededUpperThreshold,
       percentageBalance: Number(percentageInRange.toFixed(6)),
-    };
-  }
-
-  private async getToken0Token1(): Promise<{ token0: string; token1: string }> {
-    if (!this.token0 || !this.token1) {
-      await this.getPoolInfo();
-
-      if (!this.token0 || !this.token1) {
-        throw new Error("Token pair denoms not found");
-      }
-    }
-
-    return {
-      token0: this.token0,
-      token1: this.token1,
     };
   }
 }

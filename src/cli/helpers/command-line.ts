@@ -1,8 +1,9 @@
 import { DatabaseQueryClient } from "../../database";
 import { simpleGracefulShutdown } from "./graceful-shutdown";
 import { DEFAULT_KEY_NAME, KeyManager, KeyStoreType } from "../../key-manager";
+import { loadConfigWithEnvOverrides } from "../../liquidity-manager";
 import { Logger } from "./logger";
-import { findOsmosisChainInfo } from "../../registry";
+import { findArchwayChainInfo, findOsmosisChainInfo } from "../../registry";
 
 export const withErrorHandling = (fn: Function) => {
   return async (...args: any[]) => {
@@ -41,9 +42,12 @@ export const withDatabase = (
   return simpleGracefulShutdown(async () => {
     let dbQueryClient: DatabaseQueryClient | undefined;
 
+    const { config } = await loadConfigWithEnvOverrides(options.configFile);
+
     try {
       dbQueryClient = await DatabaseQueryClient.make({
         environment: options.environment,
+        chain: config.chain,
       });
 
       await callback(dbQueryClient);
@@ -100,15 +104,37 @@ export const displayTransactionDetails = (tx: any, index: number) => {
   console.log();
 };
 
-export const getAddress = async (
+export const getOsmosisAddress = async (
   keyStoreType = KeyStoreType.ENV_VARIABLE,
   environment: "mainnet" | "testnet" = "mainnet"
 ): Promise<string> => {
   const keyStore = await KeyManager.create({
     type: keyStoreType,
   });
-  return await keyStore.getAddress(
+  return await keyStore.getCosmWasmAddress(
     DEFAULT_KEY_NAME,
     findOsmosisChainInfo(environment).prefix
   );
+};
+
+export const getArchwayAddress = async (
+  keyStoreType = KeyStoreType.ENV_VARIABLE,
+  environment: "mainnet" | "testnet" = "mainnet"
+): Promise<string> => {
+  const keyStore = await KeyManager.create({
+    type: keyStoreType,
+  });
+  return await keyStore.getCosmWasmAddress(
+    DEFAULT_KEY_NAME,
+    findArchwayChainInfo(environment).prefix
+  );
+};
+
+export const getSuiAddress = async (
+  keyStoreType = KeyStoreType.ENV_VARIABLE
+): Promise<string> => {
+  const keyStore = await KeyManager.create({
+    type: keyStoreType,
+  });
+  return await keyStore.getSuiAddress(DEFAULT_KEY_NAME);
 };

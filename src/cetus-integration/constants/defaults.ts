@@ -1,0 +1,1 @@
+export const DEFAULT_POSITION_SLIPPAGE = 0.01; // 1%

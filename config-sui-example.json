@@ -1,0 +1,7 @@
+{
+  "rebalanceThresholdPercent": 90,
+  "poolId": "0xb8d7d9e66a60c239e7a60110efcf8de6c705580ed924d0dde141f4a0e2c90105",
+  "positionId": "0x34c36faa7781ce7628f4c641f08f321ad412884c982d54f0a38f72b8c70f82ef",
+  "positionBandPercentage": 1,
+  "chain": "sui"
+}

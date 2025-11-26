@@ -15,9 +15,10 @@ services:
       - WATCH_FREQUENCY=${WATCH_FREQUENCY:-300}
       
       # Config overrides
-      - OSMOSIS_POOL_ID=${OSMOSIS_POOL_ID}
+      - POOL_ID=${POOL_ID}
       - REBALANCE_THRESHOLD_PERCENT=${REBALANCE_THRESHOLD_PERCENT}
-      - OSMOSIS_POSITION_BAND_PERCENTAGE=${OSMOSIS_POSITION_BAND_PERCENTAGE}
+      - POSITION_BAND_PERCENTAGE=${POSITION_BAND_PERCENTAGE}
+      - CHAIN=${CHAIN}
       
       # Config file path (default: ./docker-files/config/config.json)
       - CONFIG_FILE=${CONFIG_FILE:-./docker-files/config/config.json}

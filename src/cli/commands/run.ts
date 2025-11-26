@@ -1,7 +1,11 @@
 import { Command } from "commander";
 
 import { sleep, gracefulShutdown, withLogger } from "../helpers";
-import { LiquidityManager } from "../../liquidity-manager";
+import {
+  loadConfigWithEnvOverrides,
+  OsmosisLiquidityManager,
+  SuiLiquidityManager,
+} from "../../liquidity-manager";
 
 export function runCommand(program: Command) {
   program
@@ -35,13 +39,27 @@ export function runCommand(program: Command) {
             );
           }
 
-          const manager = await LiquidityManager.make({
-            environment: options.environment,
-            configFilePath: options.configFile,
-            // TODO: pass the correct endpoints override if set in cli params
-            rpcEndpointsOverride: {},
-            restEndpointsOverride: {},
-          });
+          const { config, configFilePath } = await loadConfigWithEnvOverrides(
+            options.configFile
+          );
+
+          const manager =
+            config.chain === "sui"
+              ? await SuiLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoint override if set in cli params
+                  rpcEndpointOverride: undefined,
+                })
+              : await OsmosisLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoints override if set in cli params
+                  rpcEndpointsOverride: {},
+                  restEndpointsOverride: {},
+                });
 
           // Register cleanup handler
           gracefulShutdown.registerHandler({
@@ -139,7 +157,7 @@ export function runCommand(program: Command) {
 }
 
 async function executeWithTracking(
-  manager: LiquidityManager,
+  manager: OsmosisLiquidityManager | SuiLiquidityManager,
   isWatchMode: boolean = false
 ) {
   try {
@@ -155,8 +173,14 @@ async function executeWithTracking(
       console.error("⚠️  Error during execution:", error);
 
       return {
-        poolId: manager.config.osmosisPool.id || "unknown",
-        positionId: manager.config.osmosisPosition.id || "unknown",
+        poolId:
+          manager instanceof OsmosisLiquidityManager
+            ? manager.config.osmosisPool.id
+            : manager.config.cetusPool.id || "unknown",
+        positionId:
+          manager instanceof OsmosisLiquidityManager
+            ? manager.config.osmosisPosition.id
+            : manager.config.cetusPosition.id || "unknown",
         action: "error" as const,
         message: `Error: ${
           error instanceof Error ? error.message : String(error)
@@ -183,7 +207,7 @@ function displayResult(result: any) {
 }
 
 async function handleWatchMode(
-  manager: LiquidityManager,
+  manager: OsmosisLiquidityManager | SuiLiquidityManager,
   watchInterval: number
 ) {
   console.log(

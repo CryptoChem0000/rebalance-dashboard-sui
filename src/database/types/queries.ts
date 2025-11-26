@@ -2,11 +2,12 @@ import { TransactionRepository } from "./transaction-repository";
 
 export interface DatabaseQueriesConfig {
   database: TransactionRepository;
-  osmosisAddress: string;
+  addresses: string[];
 }
 
 export interface MakeDatabaseQueriesParams {
   environment: "mainnet" | "testnet";
+  chain: "osmosis" | "sui";
 }
 
 export interface VolumeByToken {
@@ -41,3 +42,6 @@ export interface AccountStats {
   firstTransaction: number;
   lastTransaction: number;
 }
+
+// Add type for multi-address parameters
+export type SignerAddresses = string | string[];

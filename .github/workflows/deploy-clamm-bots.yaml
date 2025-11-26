@@ -32,7 +32,7 @@ jobs:
     outputs:
       environments: ${{ steps.output-matrix.outputs.environments }}
       deployment_type: ${{ steps.determine-type.outputs.type }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
       - name: Validate deployment request
         run: |
           echo "🔍 Will deploy image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}"
-          
+
           # If using 'latest' tag, show warning
           if [ "${{ github.event.inputs.image_tag }}" == "latest" ]; then
             echo "⚠️  Using 'latest' tag - this will deploy the most recent release"
@@ -76,14 +76,14 @@ jobs:
         id: determine-envs
         run: |
           set -euo pipefail
-          
+
           GITHUB_ENVS='${{ steps.get-github-envs.outputs.github_environments }}'
-          
+
           if [ -z "$GITHUB_ENVS" ] || [ "$GITHUB_ENVS" = "null" ]; then
             echo "::error::No GitHub environments data available"
             exit 1
           fi
-          
+
           echo "GitHub CLAMM bot environments: $GITHUB_ENVS"
 
           # Determine which environments to deploy
@@ -140,33 +140,33 @@ jobs:
         id: output-matrix
         run: |
           set -euo pipefail
-          
+
           if [ ! -f valid-envs.txt ]; then
             echo "::error::valid-envs.txt file not found"
             exit 1
           fi
-          
+
           VALID_ENVS=()
           while IFS= read -r line; do
             [ -n "$line" ] && VALID_ENVS+=("$line")
           done < valid-envs.txt
-          
+
           if [ ${#VALID_ENVS[@]} -eq 0 ]; then
             echo "::error::No environments found in valid-envs.txt"
             exit 1
           fi
-          
+
           # Create JSON array using jq with compact output
           JSON=$(printf '%s\n' "${VALID_ENVS[@]}" | jq -R . | jq -s -c .)
-          
+
           # Validate JSON
           if ! echo "$JSON" | jq . > /dev/null 2>&1; then
             echo "::error::Failed to create valid JSON matrix"
             exit 1
           fi
-          
+
           echo "Matrix JSON: $JSON"
-          
+
           echo "environments<<EOF" >> $GITHUB_OUTPUT
           echo "$JSON" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -193,7 +193,7 @@ jobs:
             echo "ENABLED variable not set, defaulting to false"
             ENABLED="false"
           fi
-          
+
           echo "ENABLED=$ENABLED" >> $GITHUB_OUTPUT
           echo "Bot ${{ matrix.environment }} enabled: $ENABLED"
 
@@ -201,9 +201,9 @@ jobs:
         if: steps.check-enabled.outputs.ENABLED == 'true'
         run: |
           set -euo pipefail
-          
+
           CRITICAL_ERROR=false
-          
+
           # Check secrets
           if [ -z "${{ secrets.MNEMONIC }}" ]; then
             echo "::error::MNEMONIC secret not found in environment ${{ matrix.environment }}"
@@ -214,39 +214,39 @@ jobs:
 
           # Check variables
           MISSING_VARS=()
-          
-          if [ -z "${{ vars.OSMOSIS_POOL_ID }}" ]; then
-            MISSING_VARS+=("OSMOSIS_POOL_ID")
+
+          if [ -z "${{ vars.POOL_ID }}" ]; then
+            MISSING_VARS+=("POOL_ID")
           fi
-          
+
           if [ -z "${{ vars.REBALANCE_THRESHOLD_PERCENT }}" ]; then
             MISSING_VARS+=("REBALANCE_THRESHOLD_PERCENT")
           fi
-          
-          if [ -z "${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}" ]; then
-            MISSING_VARS+=("OSMOSIS_POSITION_BAND_PERCENTAGE")
+
+          if [ -z "${{ vars.POSITION_BAND_PERCENTAGE }}" ]; then
+            MISSING_VARS+=("POSITION_BAND_PERCENTAGE")
           fi
-          
+
           if [ -z "${{ vars.WATCH_FREQUENCY }}" ]; then
             MISSING_VARS+=("WATCH_FREQUENCY")
           fi
-          
+
           if [ ${#MISSING_VARS[@]} -gt 0 ]; then
             echo "::error::Missing required variables in environment ${{ matrix.environment }}: ${MISSING_VARS[*]}"
             echo "::error::Please add these variables to the GitHub environment: ${{ matrix.environment }}"
             CRITICAL_ERROR=true
           fi
-          
+
           if [ "$CRITICAL_ERROR" = "true" ]; then
             echo "::error::Critical configuration errors found for ${{ matrix.environment }}"
             exit 1
           fi
-          
+
           echo "✅ All required variables found"
           echo "Configuration for ${{ matrix.environment }}:"
-          echo "  OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}"
+          echo "  POOL_ID: ${{ vars.POOL_ID }}"
           echo "  REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}"
-          echo "  OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}"
+          echo "  POSITION_BAND_PERCENTAGE: ${{ vars.POSITION_BAND_PERCENTAGE }}"
           echo "  WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY }}"
 
       - id: "auth"
@@ -281,26 +281,30 @@ jobs:
           # Environment secrets
           MNEMONIC: ${{ secrets.MNEMONIC }}
           # Environment variables
-          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          POOL_ID: ${{ vars.POOL_ID }}
           REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
-          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+          POSITION_BAND_PERCENTAGE: ${{ vars.POSITION_BAND_PERCENTAGE }}
           WATCH_FREQUENCY: ${{ vars.WATCH_FREQUENCY }}
+          CHAIN: ${{ vars.CHAIN }}
+
         run: |
           if [ "$ENABLED" == "true" ]; then
             echo "🚀 Deploying $DEPLOYMENT_NAME..."
             echo "Using image tag: $IMAGE_TAG"
-            echo "Pool ID: $OSMOSIS_POOL_ID"
+            echo "Pool ID: $POOL_ID"
             echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
-            echo "Position Band: $OSMOSIS_POSITION_BAND_PERCENTAGE%"
+            echo "Position Band: $POSITION_BAND_PERCENTAGE%"
+            echo "Chain: $CHAIN"
             echo "Watch Frequency: $WATCH_FREQUENCY seconds"
 
             # Base64 encode the values
             export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
             export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
-            export OSMOSIS_POOL_ID_B64=$(echo -n "$OSMOSIS_POOL_ID" | base64)
+            export POOL_ID_B64=$(echo -n "$POOL_ID" | base64)
             export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
-            export OSMOSIS_POSITION_BAND_PERCENTAGE_B64=$(echo -n "$OSMOSIS_POSITION_BAND_PERCENTAGE" | base64)
+            export POSITION_BAND_PERCENTAGE_B64=$(echo -n "$POSITION_BAND_PERCENTAGE" | base64)
             export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
+            export CHAIN_B64=$(echo -n "$CHAIN" | base64)
 
             # Deploy using Helm
             helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
@@ -311,9 +315,10 @@ jobs:
               --set replicaCount=1 \
               --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
               --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
-              --set secrets.app-secrets.data.OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID_B64" \
+              --set secrets.app-secrets.data.POOL_ID="$POOL_ID_B64" \
               --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
-              --set secrets.app-secrets.data.OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE_B64" \
+              --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
+              --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
               --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
               --values ./charts/values.yaml \
               --wait --timeout 2m
@@ -352,13 +357,13 @@ jobs:
           NAMESPACE: bolt-prod
         run: |
           echo "Checking deployment status..."
-          
+
           # Try both possible deployment names
           DEPLOYMENT_NAME="${{ matrix.environment }}"
           ALT_DEPLOYMENT_NAME="${{ matrix.environment }}-clamm-bot"
-          
+
           FOUND_DEPLOYMENT=""
-          
+
           # Check standard name first
           if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
             FOUND_DEPLOYMENT=$DEPLOYMENT_NAME
@@ -366,7 +371,7 @@ jobs:
           elif kubectl get deployment $ALT_DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
             FOUND_DEPLOYMENT=$ALT_DEPLOYMENT_NAME
           fi
-          
+
           if [ -n "$FOUND_DEPLOYMENT" ]; then
             echo "✅ Found deployment: $FOUND_DEPLOYMENT"
             kubectl -n $NAMESPACE get deployment $FOUND_DEPLOYMENT
@@ -387,7 +392,7 @@ jobs:
     needs: [deploy, setup]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Check for critical failures
         run: |
@@ -395,12 +400,12 @@ jobs:
             echo "::error::Setup job failed - critical error in deployment"
             exit 1
           fi
-          
+
           echo "✅ Setup completed successfully"
-      
+
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - id: "auth"
         uses: "google-github-actions/auth@v2"
         with:
@@ -416,7 +421,7 @@ jobs:
         with:
           cluster_name: ${{ env.GKE_CLUSTER }}
           location: ${{ env.GKE_REGION }}
-        
+
       - name: Generate deployment summary
         env:
           NAMESPACE: bolt-prod
@@ -426,19 +431,19 @@ jobs:
           echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`"
           echo "**Deployment Type:** ${{ needs.setup.outputs.deployment_type }}"
           echo ""
-          
+
           # Get all deployments managed by this workflow
           echo "## All Managed Deployments:"
           echo ""
           echo "| Environment | Status | Replicas | Image Tag | Last Updated |"
           echo "|-------------|--------|----------|-----------|--------------|"
-          
+
           # Get all deployments
           DEPLOYMENTS_JSON=$(kubectl get deployments -n $NAMESPACE -o json)
-          
+
           # Get list of environments we manage
           VALID_ENVS='${{ needs.setup.outputs.environments }}'
-          
+
           # Process each environment
           echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
             # Check if deployment exists (try both naming patterns)
@@ -456,15 +461,15 @@ jobs:
               echo "| $env_name | ❌ Not Found | - | - | - |"
             fi
           done
-          
+
           echo ""
           echo "## Summary:"
-          
+
           # Count running and stopped deployments from our managed list
           RUNNING=0
           STOPPED=0
           NOT_FOUND=0
-          
+
           echo "$VALID_ENVS" | jq -r '.[]' | while read -r env_name; do
             DEPLOYMENT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".items[] | select(.metadata.name == \"$env_name\" or .metadata.name == \"${env_name}-clamm-bot\")")
             
@@ -479,15 +484,15 @@ jobs:
               NOT_FOUND=$((NOT_FOUND + 1))
             fi
           done | tail -1  # Get final counts
-          
+
           TOTAL=$(echo "$VALID_ENVS" | jq -r '. | length')
-          
+
           echo "- Total environments: $TOTAL"
           echo "- Running deployments: $RUNNING"
           echo "- Stopped deployments: $STOPPED"
           echo "- Not deployed: $NOT_FOUND"
           echo ""
-          
+
           if [ "${{ needs.setup.outputs.deployment_type }}" == "automatic" ]; then
             echo "🤖 *This deployment was automatically triggered by a build workflow*"
           fi

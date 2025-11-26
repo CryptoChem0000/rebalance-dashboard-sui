@@ -100,7 +100,7 @@ export class SkipBridging {
         throw new Error(`Missing config for the chain ${chainId}`);
       }
 
-      const address = await keyStore.getAddress(
+      const address = await keyStore.getCosmWasmAddress(
         DEFAULT_KEY_NAME,
         MapChainIdToPrefix[chainId]
       );

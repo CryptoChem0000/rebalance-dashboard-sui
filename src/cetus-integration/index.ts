@@ -1,5 +1,4 @@
 export * from "./constants";
-export * from "./osmosis-cl-pool-manager";
-export * from "./tick-math";
+export * from "./cetus-cl-pool-manager";
 export * from "./types";
 export * from "./utils";

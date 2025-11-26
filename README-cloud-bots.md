@@ -13,16 +13,17 @@ For each bot (e.g., `clamm-bot-1`, `clamm-bot-2`), you need to create a GitHub E
 
 ### Environment Variables
 - `ENABLED` - Set to `true` to deploy the bot, or `false` to stop it
-- `OSMOSIS_POOL_ID` - The Osmosis pool ID (e.g., "1282")
+- `POOL_ID` - The pool ID to use (e.g., "1282")
 - `REBALANCE_THRESHOLD_PERCENT` - The rebalance threshold percentage (e.g., "95")
-- `OSMOSIS_POSITION_BAND_PERCENTAGE` - The position band percentage (e.g., "1")
+- `POSITION_BAND_PERCENTAGE` - The position band percentage (e.g., "1")
+- `CHAIN` - The chain to use (e.g., "osmosis", "sui")
 - `WATCH_FREQUENCY` - Watch frequency in seconds (e.g., "600")
 
 ## Understanding Rebalance Parameters
 
 ### Visual Representation
 ```
-With OSMOSIS_POSITION_BAND_PERCENTAGE = 10:
+With POSITION_BAND_PERCENTAGE = 10:
 
 Position Range:           $1.35 ←─────────────────────→ $1.65
                                 │          ↑          │
@@ -66,7 +67,7 @@ Safe Zone (price stays within the middle):
 
 ### Parameter Details
 
-**OSMOSIS_POSITION_BAND_PERCENTAGE** (Allowed: 0.1 - 50)
+**POSITION_BAND_PERCENTAGE** (Allowed: 0.1 - 50)
 - Defines the width of your concentrated liquidity position
 - Example: `1` = ±1% around current price
 - Smaller value = more concentrated = higher fees earned by the bot, but needs more rebalancing
@@ -82,7 +83,7 @@ Safe Zone (price stays within the middle):
 
 1. **Create GitHub Environment**
    - Go to Settings → Environments → New environment
-   - Name it `my-bot-X`
+   - Name it `my-name-X`
 
 2. **Add Environment Secrets**
 ```
@@ -92,19 +93,22 @@ Safe Zone (price stays within the middle):
 3. **Add Environment Variables**
 ```
    ENABLED = "true"
-   OSMOSIS_POOL_ID = "1282"
+   POOL_ID = "1282"
    REBALANCE_THRESHOLD_PERCENT = "95"
-   OSMOSIS_POSITION_BAND_PERCENTAGE = "1"
+   POSITION_BAND_PERCENTAGE = "1"
+   CHAIN = "osmosis"
    WATCH_FREQUENCY = "300"
 ```
 
 ## Managing Bot State
 
-### To Deploy a Bot
+### To Start a Bot
 Set `ENABLED = "true"` in the environment variables
+Then deploy the bot so the config is applied
 
 ### To Stop a Bot
 Set `ENABLED = "false"` in the environment variables
+Then deploy the bot so the config is applied
 
 When a bot is stopped:
 - The deployment is scaled to 0 replicas
@@ -113,7 +117,7 @@ When a bot is stopped:
 
 ## Deployment Workflows
 
-### Deploy All Enabled Bots
+### Deploy Config on All Enabled Bots
 Create and push a version tag to automatically build and deploy:
 ```bash
 git tag v1.0.0
@@ -123,7 +127,7 @@ This will:
 1. Build a new Docker image
 2. Deploy to all environments where `ENABLED = "true"`
 
-### Deploy Specific Bots
+### Deploy Config on Specific Bots
 Use the Deploy workflow with specific environments:
 1. Go to Actions → Deploy CLAMM Bots → Run workflow
 2. Enter:

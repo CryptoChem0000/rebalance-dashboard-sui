@@ -1,11 +1,4 @@
 import { Coin } from "@cosmjs/proto-signing";
-import {
-  MsgCollectSpreadRewardsResponse,
-  MsgWithdrawPositionResponse,
-} from "osmojs/osmosis/concentratedliquidity/v1beta1/tx";
-
-import { TokenAmount } from "../../account-balances";
-import type { OsmosisCLPool } from "../osmosis-cl-pool";
 
 // TODO: load from chain and validate on pool creation
 export type AuthorizedTickSpacing = 1 | 10 | 100 | 1000;
@@ -29,12 +22,6 @@ export type CreatePoolParams = {
   environment?: "mainnet" | "testnet";
 };
 
-export type CreatePoolResponse = {
-  pool: OsmosisCLPool;
-  txHash: string;
-  gasFees?: TokenAmount;
-};
-
 export type CreatePositionParams = {
   lowerTick: string;
   upperTick: string;
@@ -43,28 +30,9 @@ export type CreatePositionParams = {
   tokenMinAmount1: string;
 };
 
-export type CreatePositionResponse = {
-  positionId: string;
-  tokenAmount0: TokenAmount;
-  tokenAmount1: TokenAmount;
-  liquidityCreated: string;
-  lowerTick: string;
-  upperTick: string;
-  txHash: string;
-  gasFees?: TokenAmount;
-};
-
 export type WithdrawPositionParams = {
   positionId: string;
   liquidityAmount: string;
-};
-
-export type WithdrawPositionResponse = {
-  tokenAmount0: TokenAmount;
-  tokenAmount1: TokenAmount;
-  rewardsCollected?: TokenAmount[];
-  txHash: string;
-  gasFees?: TokenAmount;
 };
 
 export type PoolInfoResponse = {
@@ -100,9 +68,4 @@ export type PositionDetails = {
   upperTick: string;
   joinTime: Date;
   liquidity: string;
-};
-
-export type PositionRangeResult = {
-  isInRange: boolean;
-  percentageBalance: number;
 };

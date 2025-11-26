@@ -9,10 +9,11 @@ MNEMONIC="your twelve or twenty four word secret phrase"
 
 # Optional - defaults shown
 WATCH_FREQUENCY=300                           # Check interval in seconds
-OSMOSIS_POOL_ID=1282                          # Pool ID from app.osmosis.zone/pools
+POOL_ID=1282                                  # Pool ID from app.osmosis.zone/pools
 REBALANCE_THRESHOLD_PERCENT=95                # Rebalance at 95% out of range
-OSMOSIS_POSITION_BAND_PERCENTAGE=1            # ±1% from current price
+POSITION_BAND_PERCENTAGE=1                    # ±1% from current price
 CONFIG_FILE=./docker-files/config/config.json # Config file to read and write from (relative to project's root path)
+CHAIN=osmosis                                 # Chain to use, could be osmosis or sui
 ```
 
 Then run:
@@ -31,9 +32,10 @@ docker run -d \
   --name lp-rebalancer \
   -e MNEMONIC="your mnemonic phrase" \
   -e WATCH_FREQUENCY=300 \
-  -e OSMOSIS_POOL_ID=1282 \
+  -e POOL_ID=1282 \
   -e REBALANCE_THRESHOLD_PERCENT=95 \
-  -e OSMOSIS_POSITION_BAND_PERCENTAGE=1 \
+  -e POSITION_BAND_PERCENTAGE=1 \
+  -e CHAIN=osmosis \
   -v $(pwd)/docker-files/logs:/app/logs \
   -v $(pwd)/docker-files/database:/app/database \
   -v $(pwd)/docker-files/reports:/app/reports \
@@ -49,16 +51,18 @@ This guide explains how to run the Osmosis liquidity management tool using Docke
 
 - Docker installed on your computer ([Download Docker](https://www.docker.com/products/docker-desktop/))
 - Your wallet mnemonic phrase
-- OSMO tokens on Osmosis (for gas - at least 3 OSMO)
+- OSMO tokens on Osmosis (for gas - at least 10 OSMO)
 - ARCH tokens on Archway (for gas - at least 30 ARCH)
 - Liquidity tokens (e.g., ATOM and USDC)
 
 ## 📦 Supported Assets
 
-The tool supports any Osmosis concentrated liquidity pool containing these tokens:
+The tool supports any Osmosis concentrated liquidity pool containing these tokens when running with CHAIN=osmosis :
 - ATOM, USDC, OSMO, TIA, INJ, WBTC, WETH, AKT, ARCH
 
 Default configuration uses pool 1282 (ATOM/USDC 0.05% fee tier).
+
+The tool supports only SUI and USDC pair liquidity pools When running with CHAIN=sui 
 
 ## 🚀 Quick Start with Docker Compose (Recommended)
 
@@ -71,10 +75,11 @@ MNEMONIC="your twelve or twenty four word secret phrase"
 
 # Optional - defaults shown
 WATCH_FREQUENCY=300                           # Check interval in seconds
-OSMOSIS_POOL_ID=1282                          # Pool ID from app.osmosis.zone/pools
+POOL_ID=1282                                  # Pool ID from app.osmosis.zone/pools
 REBALANCE_THRESHOLD_PERCENT=95                # Rebalance at 95% out of range
-OSMOSIS_POSITION_BAND_PERCENTAGE=1            # ±1% from current price
-CONFIG_FILE=./docker-files/config/config.json # Config file to read and write from
+POSITION_BAND_PERCENTAGE=1                    # ±1% from current price
+CONFIG_FILE=./docker-files/config/config.json # Config file to read and write from (relative to project's root path)
+CHAIN=osmosis                                 # Chain to use, could be osmosis or sui
 ```
 
 ### 2. Start the Service
@@ -226,22 +231,16 @@ environment:
 To manage a different pool:
 
 1. Find your pool ID at [app.osmosis.zone/pools](https://app.osmosis.zone/pools)
-2. Update `docker-config.json`:
+2. Update the poolId field on `config.json`:
 ```json
 {
-  "osmosisPool": {
-    "id": "1265",  // Your new pool ID
-    "token0": "",  // Leave empty - auto-filled
-    "token1": "",  // Leave empty - auto-filled
-    "tickSpacing": 0,  // Leave as 0 - auto-filled
-    "spreadFactor": 0  // Leave as 0 - auto-filled
-  }
+  "poolId": "1265",  // Your new pool ID
 }
 ```
 
 Or use environment variable:
 ```bash
-OSMOSIS_POOL_ID=1265
+POOL_ID=1265
 ```
 
 The tool will automatically fetch pool parameters when it starts.

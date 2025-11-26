@@ -1,12 +1,7 @@
 import { Command } from "commander";
 
 import { AccountStats, DatabaseQueryClient } from "../../database";
-import {
-  formatDateRange,
-  getAddress,
-  parseDateOptions,
-  withDatabase,
-} from "../helpers";
+import { formatDateRange, parseDateOptions, withDatabase } from "../helpers";
 
 export function statsCommand(program: Command) {
   program
@@ -22,7 +17,6 @@ export function statsCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
-        const address = await getAddress();
         console.log("📈 Transaction Statistics\n");
 
         const { startDate, endDate } = parseDateOptions(options);
@@ -30,7 +24,7 @@ export function statsCommand(program: Command) {
         formatDateRange(startDate, endDate);
 
         const summary = await db.getTransactionTypeSummary(
-          address,
+          undefined,
           startDate,
           endDate
         );
@@ -38,7 +32,7 @@ export function statsCommand(program: Command) {
 
         // Also show account stats
         const accountStats = await db.getAccountStats(
-          address,
+          undefined,
           startDate,
           endDate
         );
@@ -47,7 +41,7 @@ export function statsCommand(program: Command) {
         }
 
         if (options.csv) {
-          await exportStatsToCSV(db, address, startDate, endDate);
+          await exportStatsToCSV(db, startDate, endDate);
         }
       });
     });
@@ -78,18 +72,17 @@ function displayDetailedStats(accountStats: AccountStats[]) {
 
 async function exportStatsToCSV(
   db: DatabaseQueryClient,
-  address: string,
   startDate?: Date,
   endDate?: Date
 ) {
   console.log("\n📁 Exporting to CSV files...");
   const summaryFile = await db.exportTransactionSummaryToCSV(
-    address,
+    undefined,
     startDate,
     endDate
   );
   const statsFile = await db.exportAccountStatsToCSV(
-    address,
+    undefined,
     startDate,
     endDate
   );

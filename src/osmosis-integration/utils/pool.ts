@@ -1,12 +1,50 @@
 import { DeliverTxResponse } from "@cosmjs/stargate";
 import { BigNumber } from "bignumber.js";
+import { Pool } from "osmojs/osmosis/concentratedliquidity/v1beta1/pool";
 import { FullPositionBreakdown } from "osmojs/osmosis/concentratedliquidity/v1beta1/position";
 
 import { TokenAmount } from "../../account-balances";
 import { RegistryToken } from "../../registry";
 import { parseCoinToTokenAmount, parseStringToCoin } from "../../utils";
 
-import { PositionInfoResponse } from "../types";
+import {
+  OsmosisQueryClient,
+  PoolInfoResponse,
+  PositionInfoResponse,
+} from "../types";
+
+export const getPoolInfoResponse = async (
+  poolId: string,
+  queryClient: OsmosisQueryClient
+): Promise<PoolInfoResponse> => {
+  const response = await queryClient.osmosis.poolmanager.v1beta1.pool({
+    poolId: BigInt(poolId),
+  });
+
+  if (
+    response.pool?.$typeUrl !== "/osmosis.concentratedliquidity.v1beta1.Pool"
+  ) {
+    throw new Error(`Pool ${poolId} isn't a Concentrated Liquidity Pool`);
+  }
+
+  const pool = response.pool as Pool;
+
+  return {
+    address: pool.address,
+    incentivesAddress: pool.incentivesAddress,
+    spreadRewardsAddress: pool.spreadRewardsAddress,
+    id: BigNumber(pool.id).toFixed(),
+    currentTickLiquidity: pool.currentTickLiquidity,
+    token0: pool.token0,
+    token1: pool.token1,
+    currentSqrtPrice: pool.currentSqrtPrice,
+    currentTick: BigNumber(pool.currentTick).toFixed(),
+    tickSpacing: BigNumber(pool.tickSpacing).toFixed(),
+    exponentAtPriceOne: BigNumber(pool.exponentAtPriceOne).toFixed(),
+    spreadFactor: pool.spreadFactor,
+    lastLiquidityUpdate: pool.lastLiquidityUpdate,
+  };
+};
 
 export const extractRewardsCollected = (
   txResponse: DeliverTxResponse,

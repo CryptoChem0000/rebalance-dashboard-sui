@@ -10,25 +10,27 @@ import type { Config } from "./types";
 export const loadConfigWithEnvOverrides = async (
   configFilePath?: string,
   envFilePath?: string
-): Promise<{ config: Config; configPath: string }> => {
+): Promise<{ config: Config; configFilePath: string }> => {
   // Get config path
   const workingDir = await getWorkingDirectory();
-  const configPath = configFilePath ?? path.join(workingDir, "config.json");
+  const finalConfigFilePath =
+    configFilePath ?? path.join(workingDir, "config.json");
 
   // Try to load default config, but don't fail if it doesn't exist
   let defaultConfig: Config | null = null;
   let configFileExists = false;
 
   try {
-    if (existsSync(configPath)) {
+    if (existsSync(finalConfigFilePath)) {
       configFileExists = true;
-      const configContent = await fs.readFile(configPath, "utf-8");
+      const configContent = await fs.readFile(finalConfigFilePath, "utf-8");
+
       defaultConfig = JSON.parse(configContent) as Config;
-      console.log("Loaded config from file:", configPath);
+      console.log("Loaded config from file:", finalConfigFilePath);
     } else {
       console.log(
         "Config file not found at:",
-        configPath,
+        finalConfigFilePath,
         "- will use environment variables"
       );
     }
@@ -65,49 +67,22 @@ export const loadConfigWithEnvOverrides = async (
     rebalanceThresholdPercent: finalEnvVars.REBALANCE_THRESHOLD_PERCENT
       ? parseFloat(finalEnvVars.REBALANCE_THRESHOLD_PERCENT)
       : defaultConfig?.rebalanceThresholdPercent ?? 0,
-
-    osmosisPool: {
-      id: finalEnvVars.OSMOSIS_POOL_ID || defaultConfig?.osmosisPool?.id || "",
-      // If pool ID changed via env or no default, clear the auto-filled fields
-      token0:
-        !defaultConfig ||
-        (finalEnvVars.OSMOSIS_POOL_ID &&
-          finalEnvVars.OSMOSIS_POOL_ID !== defaultConfig.osmosisPool.id)
-          ? ""
-          : defaultConfig.osmosisPool.token0 || "",
-      token1:
-        !defaultConfig ||
-        (finalEnvVars.OSMOSIS_POOL_ID &&
-          finalEnvVars.OSMOSIS_POOL_ID !== defaultConfig.osmosisPool.id)
-          ? ""
-          : defaultConfig.osmosisPool.token1 || "",
-      tickSpacing:
-        !defaultConfig ||
-        (finalEnvVars.OSMOSIS_POOL_ID &&
-          finalEnvVars.OSMOSIS_POOL_ID !== defaultConfig.osmosisPool.id)
-          ? 0
-          : defaultConfig.osmosisPool.tickSpacing || 0,
-      spreadFactor:
-        !defaultConfig ||
-        (finalEnvVars.OSMOSIS_POOL_ID &&
-          finalEnvVars.OSMOSIS_POOL_ID !== defaultConfig.osmosisPool.id)
-          ? 0
-          : defaultConfig.osmosisPool.spreadFactor || 0,
-    },
-
-    osmosisPosition: {
-      id: defaultConfig?.osmosisPosition?.id || "",
-      bandPercentage: finalEnvVars.OSMOSIS_POSITION_BAND_PERCENTAGE
-        ? parseFloat(finalEnvVars.OSMOSIS_POSITION_BAND_PERCENTAGE)
-        : defaultConfig?.osmosisPosition?.bandPercentage ?? 0,
-    },
+    poolId: finalEnvVars.POOL_ID || defaultConfig?.poolId || "",
+    positionId: defaultConfig?.positionId || "",
+    positionBandPercentage: finalEnvVars.POSITION_BAND_PERCENTAGE
+      ? parseFloat(finalEnvVars.POSITION_BAND_PERCENTAGE)
+      : defaultConfig?.positionBandPercentage ?? 0,
+    chain:
+      finalEnvVars.CHAIN === "osmosis" || finalEnvVars.CHAIN === "sui"
+        ? finalEnvVars.CHAIN
+        : defaultConfig?.chain ?? "osmosis",
   };
 
   // Validate required configuration
   const missingFields: string[] = [];
 
-  if (!config.osmosisPool.id) {
-    missingFields.push("OSMOSIS_POOL_ID (osmosisPool.id)");
+  if (!config.poolId) {
+    missingFields.push("Config: poolId | Env Variable: POOL_ID");
   }
 
   if (
@@ -115,16 +90,16 @@ export const loadConfigWithEnvOverrides = async (
     !finalEnvVars.REBALANCE_THRESHOLD_PERCENT
   ) {
     missingFields.push(
-      "REBALANCE_THRESHOLD_PERCENT (rebalanceThresholdPercent)"
+      "Config: rebalanceThresholdPercent | Env Variable: REBALANCE_THRESHOLD_PERCENT"
     );
   }
 
   if (
-    config.osmosisPosition.bandPercentage === 0 &&
-    !finalEnvVars.OSMOSIS_POSITION_BAND_PERCENTAGE
+    config.positionBandPercentage === 0 &&
+    !finalEnvVars.POSITION_BAND_PERCENTAGE
   ) {
     missingFields.push(
-      "OSMOSIS_POSITION_BAND_PERCENTAGE (osmosisPosition.bandPercentage)"
+      "Config: positionBandPercentage | Env Variable: POSITION_BAND_PERCENTAGE"
     );
   }
 
@@ -132,7 +107,7 @@ export const loadConfigWithEnvOverrides = async (
     throw new Error(
       `Missing required configuration. ` +
         `Config file ${configFileExists ? "was found but" : "not found and"} ` +
-        `the following required fields are missing from environment variables:\n` +
+        `the following required fields are missing from both the config file environment variables:\n` +
         missingFields.map((field) => `  - ${field}`).join("\n")
     );
   }
@@ -145,7 +120,7 @@ export const loadConfigWithEnvOverrides = async (
         JSON.stringify(config) !== JSON.stringify(defaultConfig))
     ) {
       await fs.writeFile(
-        configPath,
+        finalConfigFilePath,
         JSON.stringify(config, undefined, 2),
         "utf-8"
       );
@@ -160,5 +135,5 @@ export const loadConfigWithEnvOverrides = async (
     console.log("Continuing with in-memory configuration");
   }
 
-  return { config, configPath };
+  return { config, configFilePath: finalConfigFilePath };
 };

@@ -5,7 +5,11 @@ import {
   simpleGracefulShutdown,
   withLogger,
 } from "../helpers";
-import { LiquidityManager } from "../../liquidity-manager";
+import {
+  loadConfigWithEnvOverrides,
+  OsmosisLiquidityManager,
+  SuiLiquidityManager,
+} from "../../liquidity-manager";
 
 export function withdrawCommand(program: Command) {
   program
@@ -27,13 +31,27 @@ export function withdrawCommand(program: Command) {
             console.log(`Config file: ${options.configFile}`);
           }
 
-          const manager = await LiquidityManager.make({
-            environment: options.environment,
-            configFilePath: options.configFile,
-            // TODO: pass the correct endpoints override if set in cli params
-            rpcEndpointsOverride: {},
-            restEndpointsOverride: {},
-          });
+          const { config, configFilePath } = await loadConfigWithEnvOverrides(
+            options.configFile
+          );
+
+          const manager =
+            config.chain === "sui"
+              ? await SuiLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoint override if set in cli params
+                  rpcEndpointOverride: undefined,
+                })
+              : await OsmosisLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoints override if set in cli params
+                  rpcEndpointsOverride: {},
+                  restEndpointsOverride: {},
+                });
 
           gracefulShutdown.registerHandler({
             waitForOperation: async () => {},

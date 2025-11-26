@@ -73,16 +73,16 @@ jobs:
           # Check required variables
           MISSING_VARS=()
           
-          if [ -z "${{ vars.OSMOSIS_POOL_ID }}" ]; then
-            MISSING_VARS+=("OSMOSIS_POOL_ID")
+          if [ -z "${{ vars.POOL_ID }}" ]; then
+            MISSING_VARS+=("POOL_ID")
           fi
           
           if [ -z "${{ vars.REBALANCE_THRESHOLD_PERCENT }}" ]; then
             MISSING_VARS+=("REBALANCE_THRESHOLD_PERCENT")
           fi
           
-          if [ -z "${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}" ]; then
-            MISSING_VARS+=("OSMOSIS_POSITION_BAND_PERCENTAGE")
+          if [ -z "${{ vars.POSITION_BAND_PERCENTAGE }}" ]; then
+            MISSING_VARS+=("POSITION_BAND_PERCENTAGE")
           fi
           
           if [ ${#MISSING_VARS[@]} -gt 0 ]; then
@@ -194,9 +194,10 @@ jobs:
           # Environment secrets
           MNEMONIC: ${{ secrets.MNEMONIC }}
           # Environment variables
-          OSMOSIS_POOL_ID: ${{ vars.OSMOSIS_POOL_ID }}
+          POOL_ID: ${{ vars.POOL_ID }}
           REBALANCE_THRESHOLD_PERCENT: ${{ vars.REBALANCE_THRESHOLD_PERCENT }}
-          OSMOSIS_POSITION_BAND_PERCENTAGE: ${{ vars.OSMOSIS_POSITION_BAND_PERCENTAGE }}
+          POSITION_BAND_PERCENTAGE: ${{ vars.POSITION_BAND_PERCENTAGE }}
+          CHAIN: ${{ vars.CHAIN }}
         run: |
           echo "💰 Running withdrawal for $BOT_NAME..."
           
@@ -213,9 +214,10 @@ jobs:
             --namespace=$NAMESPACE \
             --from-literal=DATABASE_URL="$DATABASE_URL" \
             --from-literal=MNEMONIC="$MNEMONIC" \
-            --from-literal=OSMOSIS_POOL_ID="$OSMOSIS_POOL_ID" \
+            --from-literal=POOL_ID="$POOL_ID" \
             --from-literal=REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT" \
-            --from-literal=OSMOSIS_POSITION_BAND_PERCENTAGE="$OSMOSIS_POSITION_BAND_PERCENTAGE"
+            --from-literal=POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE" \
+            --from-literal=CHAIN="$CHAIN"
           
           echo "✅ Created secret: $WITHDRAWAL_SECRET_NAME"
           
@@ -263,21 +265,26 @@ jobs:
                       secretKeyRef:
                         name: ${WITHDRAWAL_SECRET_NAME}
                         key: MNEMONIC
-                  - name: OSMOSIS_POOL_ID
+                  - name: POOL_ID
                     valueFrom:
                       secretKeyRef:
                         name: ${WITHDRAWAL_SECRET_NAME}
-                        key: OSMOSIS_POOL_ID
+                        key: POOL_ID
                   - name: REBALANCE_THRESHOLD_PERCENT
                     valueFrom:
                       secretKeyRef:
                         name: ${WITHDRAWAL_SECRET_NAME}
                         key: REBALANCE_THRESHOLD_PERCENT
-                  - name: OSMOSIS_POSITION_BAND_PERCENTAGE
+                  - name: POSITION_BAND_PERCENTAGE
                     valueFrom:
                       secretKeyRef:
                         name: ${WITHDRAWAL_SECRET_NAME}
-                        key: OSMOSIS_POSITION_BAND_PERCENTAGE
+                        key: POSITION_BAND_PERCENTAGE
+                  - name: CHAIN
+                    valueFrom:
+                      secretKeyRef:
+                        name: ${WITHDRAWAL_SECRET_NAME}
+                        key: CHAIN
                   resources:
                     requests:
                       memory: "256Mi"

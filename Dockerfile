@@ -12,6 +12,8 @@ RUN npm ci --ignore-scripts && npm cache clean --force
 # Now copy all source files
 COPY . .
 
+RUN npm rebuild better-sqlite3
+
 # Run postinstall manually after files are copied
 RUN npm run postinstall
 

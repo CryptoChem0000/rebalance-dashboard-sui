@@ -8,6 +8,7 @@ import {
   VolumeByToken,
   ProfitabilityByToken,
   TransactionTypeSummary,
+  SignerAddresses,
 } from "./types";
 
 export class PostgresTransactionRepository implements TransactionRepository {
@@ -30,6 +31,23 @@ export class PostgresTransactionRepository implements TransactionRepository {
 
   private toTimestamp(date: Date): number {
     return Math.floor(date.getTime() / 1000);
+  }
+
+  // Helper method to normalize signer addresses
+  private normalizeAddresses(signerAddress: SignerAddresses): string[] {
+    if (Array.isArray(signerAddress)) {
+      return signerAddress;
+    }
+    return [signerAddress];
+  }
+
+  // Helper to build signer filter
+  private buildSignerFilter(signerAddress?: SignerAddresses): Prisma.Sql {
+    if (!signerAddress) {
+      return Prisma.sql``;
+    }
+    const addresses = this.normalizeAddresses(signerAddress);
+    return Prisma.sql`AND signer_address = ANY(${addresses})`;
   }
 
   async addTransaction(tx: AccountTransaction): Promise<void> {
@@ -222,15 +240,17 @@ export class PostgresTransactionRepository implements TransactionRepository {
   }
 
   async getAccountTransactions(
-    signerAddress: string,
+    signerAddress: SignerAddresses,
     limit: number = 100,
     offset: number = 0,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountTransaction[]> {
+    const addresses = this.normalizeAddresses(signerAddress);
+
     const dbTxs = await this.prisma.accountTransaction.findMany({
       where: {
-        signerAddress,
+        signerAddress: { in: addresses },
         ...(startTime || endTime
           ? {
               timestamp: {
@@ -250,14 +270,18 @@ export class PostgresTransactionRepository implements TransactionRepository {
 
   async getTransactionsByType(
     transactionType: TransactionType,
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     limit: number = 100,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountTransaction[]> {
+    const addresses = signerAddress
+      ? this.normalizeAddresses(signerAddress)
+      : undefined;
+
     const dbTxs = await this.prisma.accountTransaction.findMany({
       where: {
-        ...(signerAddress ? { signerAddress } : {}),
+        ...(addresses ? { signerAddress: { in: addresses } } : {}),
         ...(transactionType ? { transactionType } : {}),
         ...(startTime || endTime
           ? {
@@ -275,16 +299,17 @@ export class PostgresTransactionRepository implements TransactionRepository {
     return dbTxs.map((dbTx) => this.dbToTransaction(dbTx));
   }
 
-  // Updated with mandatory signerAddress
   async getAccountStats(
-    signerAddress: string,
+    signerAddress: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<AccountStats[]> {
+    const addresses = this.normalizeAddresses(signerAddress);
+
     const stats = await this.prisma.accountTransaction.groupBy({
       by: ["transactionType"],
       where: {
-        signerAddress,
+        signerAddress: { in: addresses },
         ...(startTime || endTime
           ? {
               timestamp: {
@@ -308,7 +333,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
     const successCounts = await this.prisma.accountTransaction.groupBy({
       by: ["transactionType"],
       where: {
-        signerAddress,
+        signerAddress: { in: addresses },
         successful: true,
         ...(startTime || endTime
           ? {
@@ -343,15 +368,12 @@ export class PostgresTransactionRepository implements TransactionRepository {
     }));
   }
 
-  // Updated with optional signerAddress - with full SQL
   async getArchwayBoltVolume(
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    const signerFilter = signerAddress
-      ? Prisma.sql`AND signer_address = ${signerAddress}`
-      : Prisma.sql``;
+    const signerFilter = this.buildSignerFilter(signerAddress);
     const startFilter = startTime
       ? Prisma.sql`AND timestamp >= ${startTime}`
       : Prisma.sql``;
@@ -441,15 +463,12 @@ export class PostgresTransactionRepository implements TransactionRepository {
     }));
   }
 
-  // Updated with optional signerAddress - with full SQL
   async getOsmosisVolume(
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    const signerFilter = signerAddress
-      ? Prisma.sql`AND signer_address = ${signerAddress}`
-      : Prisma.sql``;
+    const signerFilter = this.buildSignerFilter(signerAddress);
     const startFilter = startTime
       ? Prisma.sql`AND timestamp >= ${startTime}`
       : Prisma.sql``;
@@ -539,15 +558,12 @@ export class PostgresTransactionRepository implements TransactionRepository {
     }));
   }
 
-  // Updated with optional signerAddress - with full SQL
   async getBridgeVolume(
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<VolumeByToken[]> {
-    const signerFilter = signerAddress
-      ? Prisma.sql`AND signer_address = ${signerAddress}`
-      : Prisma.sql``;
+    const signerFilter = this.buildSignerFilter(signerAddress);
     const startFilter = startTime
       ? Prisma.sql`AND timestamp >= ${startTime}`
       : Prisma.sql``;
@@ -611,15 +627,12 @@ export class PostgresTransactionRepository implements TransactionRepository {
     }));
   }
 
-  // Updated with optional signerAddress - with full SQL
   async getProfitability(
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<ProfitabilityByToken[]> {
-    const signerFilter = signerAddress
-      ? Prisma.sql`AND signer_address = ${signerAddress}`
-      : Prisma.sql``;
+    const signerFilter = this.buildSignerFilter(signerAddress);
     const startFilter = startTime
       ? Prisma.sql`AND timestamp >= ${startTime}`
       : Prisma.sql``;
@@ -627,7 +640,143 @@ export class PostgresTransactionRepository implements TransactionRepository {
       ? Prisma.sql`AND timestamp <= ${endTime}`
       : Prisma.sql``;
 
-    const result = await this.prisma.$queryRaw<
+    // Build the query with or without last transaction exclusion
+    let query: string;
+
+    query = `
+        WITH last_transaction AS (
+          SELECT 
+            tx_hash,
+            tx_action_index,
+            transaction_type,
+            timestamp
+          FROM account_transactions
+          WHERE 1=1
+            ${signerFilter}
+            ${startFilter}
+            ${endFilter}
+          ORDER BY timestamp DESC, tx_action_index DESC
+          LIMIT 1
+        ),
+        token_flows AS (
+          -- All payments (negative values)
+          SELECT 
+            token_name,
+            -SUM(amount) as net_amount,
+            'payment' as flow_type
+          FROM (
+            -- Input amounts
+            SELECT at.input_token_name as token_name, at.input_amount::NUMERIC as amount
+            FROM account_transactions at, last_transaction lt
+            WHERE at.successful = true
+              AND at.input_amount IS NOT NULL 
+              AND at.input_token_name IS NOT NULL
+              ${signerFilter}
+              ${startFilter}
+              ${endFilter}
+              -- Exclude last transaction if it's create_position
+              AND NOT (at.tx_hash = lt.tx_hash 
+                       AND at.tx_action_index = lt.tx_action_index 
+                       AND lt.transaction_type = 'create_position')
+            
+            UNION ALL
+            
+            -- Second input amounts
+            SELECT at.second_input_token_name as token_name, at.second_input_amount::NUMERIC as amount
+            FROM account_transactions at, last_transaction lt
+            WHERE at.successful = true
+              AND at.second_input_amount IS NOT NULL 
+              AND at.second_input_token_name IS NOT NULL
+              ${signerFilter}
+              ${startFilter}
+              ${endFilter}
+              -- Exclude last transaction if it's create_position
+              AND NOT (at.tx_hash = lt.tx_hash 
+                       AND at.tx_action_index = lt.tx_action_index 
+                       AND lt.transaction_type = 'create_position')
+            
+            UNION ALL
+            
+            -- Gas fees
+            SELECT at.gas_fee_token_name as token_name, at.gas_fee_amount::NUMERIC as amount
+            FROM account_transactions at, last_transaction lt
+            WHERE at.successful = true
+              AND at.gas_fee_amount IS NOT NULL 
+              AND at.gas_fee_token_name IS NOT NULL
+              ${signerFilter}
+              ${startFilter}
+              ${endFilter}
+              -- Exclude last transaction if it's create_position
+              AND NOT (at.tx_hash = lt.tx_hash 
+                       AND at.tx_action_index = lt.tx_action_index 
+                       AND lt.transaction_type = 'create_position')
+          ) AS payments
+          GROUP BY token_name
+          
+          UNION ALL
+          
+          -- All receipts (positive values)
+          SELECT 
+            token_name,
+            SUM(amount) as net_amount,
+            'receipt' as flow_type
+          FROM (
+            -- Output amounts
+            SELECT at.output_token_name as token_name, at.output_amount::NUMERIC as amount
+            FROM account_transactions at, last_transaction lt
+            WHERE at.successful = true
+              AND at.output_amount IS NOT NULL 
+              AND at.output_token_name IS NOT NULL
+              ${signerFilter}
+              ${startFilter}
+              ${endFilter}
+              -- Exclude last transaction if it's create_position
+              AND NOT (at.tx_hash = lt.tx_hash 
+                       AND at.tx_action_index = lt.tx_action_index 
+                       AND lt.transaction_type = 'create_position')
+            
+            UNION ALL
+            
+            -- Second output amounts
+            SELECT at.second_output_token_name as token_name, at.second_output_amount::NUMERIC as amount
+            FROM account_transactions at, last_transaction lt
+            WHERE at.successful = true
+              AND at.second_output_amount IS NOT NULL 
+              AND at.second_output_token_name IS NOT NULL
+              ${signerFilter}
+              ${startFilter}
+              ${endFilter}
+              -- Exclude last transaction if it's create_position
+              AND NOT (at.tx_hash = lt.tx_hash 
+                       AND at.tx_action_index = lt.tx_action_index 
+                       AND lt.transaction_type = 'create_position')
+          ) AS receipts
+          GROUP BY token_name
+        ),
+        token_summary AS (
+          SELECT 
+            token_name,
+            SUM(net_amount) as net_balance,
+            SUM(CASE WHEN flow_type = 'payment' THEN -net_amount ELSE 0 END) as total_sent,
+            SUM(CASE WHEN flow_type = 'receipt' THEN net_amount ELSE 0 END) as total_received
+          FROM token_flows
+          GROUP BY token_name
+        )
+        SELECT 
+          token_name as tokenName,
+          total_sent as totalSent,
+          total_received as totalReceived,
+          net_balance as netBalance,
+          CASE 
+            WHEN total_sent > 0 THEN (net_balance / total_sent) * 100
+            ELSE NULL
+          END as roiPercentage
+        FROM token_summary
+        WHERE ABS(net_balance) > 0.01  -- Filter out dust amounts
+        ORDER BY net_balance DESC
+      `;
+
+    const result = await this.prisma.$queryRawUnsafe<
       Array<{
         tokenname: string;
         totalsent: number;
@@ -635,103 +784,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
         netbalance: number;
         roipercentage: number | null;
       }>
-    >`
-      WITH token_flows AS (
-        -- All payments (negative values)
-        SELECT 
-          token_name,
-          -SUM(amount) as net_amount,
-          'payment' as flow_type
-        FROM (
-          -- Input amounts
-          SELECT input_token_name as token_name, input_amount::NUMERIC as amount
-          FROM account_transactions
-          WHERE successful = true
-            AND input_amount IS NOT NULL 
-            AND input_token_name IS NOT NULL
-            ${signerFilter}
-            ${startFilter}
-            ${endFilter}
-          
-          UNION ALL
-          
-          -- Second input amounts
-          SELECT second_input_token_name as token_name, second_input_amount::NUMERIC as amount
-          FROM account_transactions
-          WHERE successful = true
-            AND second_input_amount IS NOT NULL 
-            AND second_input_token_name IS NOT NULL
-            ${signerFilter}
-            ${startFilter}
-            ${endFilter}
-          
-          UNION ALL
-          
-          -- Gas fees
-          SELECT gas_fee_token_name as token_name, gas_fee_amount::NUMERIC as amount
-          FROM account_transactions
-          WHERE successful = true
-            AND gas_fee_amount IS NOT NULL 
-            AND gas_fee_token_name IS NOT NULL
-            ${signerFilter}
-            ${startFilter}
-            ${endFilter}
-        ) AS payments
-        GROUP BY token_name
-        
-        UNION ALL
-        
-        -- All receipts (positive values)
-        SELECT 
-          token_name,
-          SUM(amount) as net_amount,
-          'receipt' as flow_type
-        FROM (
-          -- Output amounts
-          SELECT output_token_name as token_name, output_amount::NUMERIC as amount
-          FROM account_transactions
-          WHERE successful = true
-            AND output_amount IS NOT NULL 
-            AND output_token_name IS NOT NULL
-            ${signerFilter}
-            ${startFilter}
-            ${endFilter}
-          
-          UNION ALL
-          
-          -- Second output amounts
-          SELECT second_output_token_name as token_name, second_output_amount::NUMERIC as amount
-          FROM account_transactions
-          WHERE successful = true
-            AND second_output_amount IS NOT NULL 
-            AND second_output_token_name IS NOT NULL
-            ${signerFilter}
-            ${startFilter}
-            ${endFilter}
-        ) AS receipts
-        GROUP BY token_name
-      ),
-      token_summary AS (
-        SELECT 
-          token_name,
-          SUM(net_amount) as net_balance,
-          SUM(CASE WHEN flow_type = 'payment' THEN -net_amount ELSE 0 END) as total_sent,
-          SUM(CASE WHEN flow_type = 'receipt' THEN net_amount ELSE 0 END) as total_received
-        FROM token_flows
-        GROUP BY token_name
-      )
-      SELECT 
-        token_name as tokenName,
-        total_sent as totalSent,
-        total_received as totalReceived,
-        net_balance as netBalance,
-        CASE 
-          WHEN total_sent > 0 THEN (net_balance / total_sent) * 100
-          ELSE NULL
-        END as roiPercentage
-      FROM token_summary
-      ORDER BY net_balance DESC
-    `;
+    >(query);
 
     return result.map((row) => ({
       tokenName: row.tokenname,
@@ -742,16 +795,19 @@ export class PostgresTransactionRepository implements TransactionRepository {
     }));
   }
 
-  // Updated with optional signerAddress
   async getTransactionTypeSummary(
-    signerAddress?: string,
+    signerAddress?: SignerAddresses,
     startTime?: Date,
     endTime?: Date
   ): Promise<TransactionTypeSummary[]> {
+    const addresses = signerAddress
+      ? this.normalizeAddresses(signerAddress)
+      : undefined;
+
     const summary = await this.prisma.accountTransaction.groupBy({
       by: ["transactionType"],
       where: {
-        ...(signerAddress ? { signerAddress } : {}),
+        ...(addresses ? { signerAddress: { in: addresses } } : {}),
         ...(startTime || endTime
           ? {
               timestamp: {
@@ -769,7 +825,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
     const successSummary = await this.prisma.accountTransaction.groupBy({
       by: ["transactionType", "successful"],
       where: {
-        ...(signerAddress ? { signerAddress } : {}),
+        ...(addresses ? { signerAddress: { in: addresses } } : {}),
         ...(startTime || endTime
           ? {
               timestamp: {

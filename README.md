@@ -12,7 +12,7 @@ This tool automatically manages your liquidity positions on Osmosis DEX. When yo
 
 ## 📦 Supported Assets
 
-Currently supported token pairs:
+Currently supported token pairs when CHAIN=osmosis:
 - **ATOM/USDC** (default configuration - Pool 1282)
 - **Any pool** containing these supported tokens:
   - ATOM (Cosmos Hub)
@@ -25,7 +25,8 @@ Currently supported token pairs:
   - AKT (Akash)
   - ARCH (Archway)
 
-You can use any Osmosis concentrated liquidity pool that contains two of these tokens.
+Currently supported token pairs when CHAIN=sui:
+- **USDC/SUI** (for example Pool 0xb8d7d9e66a60c239e7a60110efcf8de6c705580ed924d0dde141f4a0e2c90105)
 
 ## 🚀 Getting Started (Step by Step)
 
@@ -70,17 +71,10 @@ The `config.json` file controls how the tool operates:
 ```json
 {
   "rebalanceThresholdPercent": 95,
-  "osmosisPool": {
-    "id": "1282",
-    "token0": "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
-    "token1": "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4",
-    "tickSpacing": 100,
-    "spreadFactor": 0.0005
-  },
-  "osmosisPosition": {
-    "id": "",
-    "bandPercentage": 1
-  }
+  "poolId": "1282",
+  "positionId": "",
+  "positionBandPercentage": 1,
+  "chain": "osmosis"
 }
 ```
 
@@ -100,8 +94,9 @@ The `config.json` file controls how the tool operates:
 **Environment Variable Overrides:**
 You can override config settings using environment variables:
 - `REBALANCE_THRESHOLD_PERCENT` - When to rebalance (default: from config)
-- `OSMOSIS_POOL_ID` - Override the pool ID
-- `OSMOSIS_POSITION_BAND_PERCENTAGE` - Position range width
+- `POOL_ID` - Override the pool ID
+- `POSITION_BAND_PERCENTAGE` - Position range width
+- `CHAIN`- Chain to use, could be osmosis or sui
 - `WATCH_FREQUENCY` - Check interval in seconds (default: 300)
 
 ## 📋 Available Commands

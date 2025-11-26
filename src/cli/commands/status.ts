@@ -6,7 +6,14 @@ import {
   simpleGracefulShutdown,
   withLogger,
 } from "../helpers";
-import { LiquidityManager } from "../../liquidity-manager";
+import {
+  loadConfigWithEnvOverrides,
+  OsmosisLiquidityManager,
+  PositionRangeResult,
+  StatusPoolInfo,
+  StatusPositionInfo,
+  SuiLiquidityManager,
+} from "../../liquidity-manager";
 
 export function statusCommand(program: Command) {
   program
@@ -28,13 +35,27 @@ export function statusCommand(program: Command) {
             console.log(`Config file: ${options.configFile}`);
           }
 
-          const manager = await LiquidityManager.make({
-            environment: options.environment,
-            configFilePath: options.configFile,
-            // TODO: pass the correct endpoints override if set in cli params
-            rpcEndpointsOverride: {},
-            restEndpointsOverride: {},
-          });
+          const { config, configFilePath } = await loadConfigWithEnvOverrides(
+            options.configFile
+          );
+
+          const manager =
+            config.chain === "sui"
+              ? await SuiLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoint override if set in cli params
+                  rpcEndpointOverride: undefined,
+                })
+              : await OsmosisLiquidityManager.make({
+                  environment: options.environment,
+                  configFilePath,
+                  config,
+                  // TODO: pass the correct endpoints override if set in cli params
+                  rpcEndpointsOverride: {},
+                  restEndpointsOverride: {},
+                });
 
           gracefulShutdown.registerHandler({
             waitForOperation: async () => {},
@@ -45,19 +66,18 @@ export function statusCommand(program: Command) {
           });
 
           const status = await manager.getStatus();
-
           displayPoolInfo(status.poolInfo);
-          displayPositionInfo(status.positionInfo, status);
+          displayPositionInfo(status.positionInfo);
           displayRangeStatus(
-            status.positionRange,
-            manager.config.rebalanceThresholdPercent
+            manager.config.rebalanceThresholdPercent,
+            status.positionInfo?.range
           );
         });
       });
     });
 }
 
-function displayPoolInfo(poolInfo: any) {
+function displayPoolInfo(poolInfo?: StatusPoolInfo) {
   if (!poolInfo) {
     console.log("\nℹ️  No pool configured yet");
     return;
@@ -73,7 +93,7 @@ function displayPoolInfo(poolInfo: any) {
   console.log(`Current Tick: ${poolInfo.currentTick}`);
 }
 
-function displayPositionInfo(positionInfo: any, status: any) {
+function displayPositionInfo(positionInfo?: StatusPositionInfo) {
   if (!positionInfo) {
     console.log("\nℹ️  No position configured yet");
     return;
@@ -81,12 +101,12 @@ function displayPositionInfo(positionInfo: any, status: any) {
 
   console.log("\n📍 Position Information:");
   console.log("─".repeat(50));
-  console.log(`Position ID: ${positionInfo.position.positionId}`);
-  console.log(`Lower Tick: ${positionInfo.position.lowerTick}`);
-  console.log(`Upper Tick: ${positionInfo.position.upperTick}`);
-  console.log(`Lower Price: ${status.positionLowerPrice}`);
-  console.log(`Upper Price: ${status.positionUpperPrice}`);
-  console.log(`Liquidity: ${positionInfo.position.liquidity}`);
+  console.log(`Position ID: ${positionInfo.id}`);
+  console.log(`Lower Tick: ${positionInfo.lowerTick}`);
+  console.log(`Upper Tick: ${positionInfo.upperTick}`);
+  console.log(`Lower Price: ${positionInfo.lowerPrice}`);
+  console.log(`Upper Price: ${positionInfo.upperPrice}`);
+  console.log(`Liquidity: ${positionInfo.liquidity}`);
   console.log(
     `Asset 0: ${positionInfo.asset0.amount} ${positionInfo.asset0.denom}`
   );
@@ -96,8 +116,8 @@ function displayPositionInfo(positionInfo: any, status: any) {
 }
 
 function displayRangeStatus(
-  positionRange: any,
-  rebalanceThresholdPercent: number
+  rebalanceThresholdPercent: number,
+  positionRange?: PositionRangeResult
 ) {
   if (!positionRange) {
     console.log("\nℹ️  Failed to calculate position range");

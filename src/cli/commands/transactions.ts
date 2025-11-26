@@ -4,7 +4,6 @@ import { TransactionType } from "../../database";
 import {
   displayTransactionDetails,
   formatDateRange,
-  getAddress,
   parseDateOptions,
   withDatabase,
 } from "../helpers";
@@ -28,7 +27,6 @@ export function transactionsCommand(program: Command) {
     .option("-E, --end <date>", "End date (DD-MM-YYYY)")
     .action(async (options) => {
       await withDatabase(options, async (db) => {
-        const address = await getAddress();
         const { startDate, endDate } = parseDateOptions(options);
         const limit = parseInt(options.limit, 10);
 
@@ -37,7 +35,7 @@ export function transactionsCommand(program: Command) {
           console.log(`📄 Recent ${options.type} transactions:\n`);
           transactions = await db.getTransactionsByType(
             options.type as TransactionType,
-            address,
+            undefined,
             limit,
             startDate,
             endDate
@@ -45,7 +43,7 @@ export function transactionsCommand(program: Command) {
         } else {
           console.log(`📄 Recent transactions (limit: ${limit}):\n`);
           transactions = await db.getRecentTransactions(
-            address,
+            undefined,
             limit,
             0,
             startDate,
@@ -68,7 +66,7 @@ export function transactionsCommand(program: Command) {
         if (options.csv) {
           console.log("\n📁 Exporting to CSV file...");
           const file = await db.exportTransactionsToCSV(
-            address,
+            undefined,
             limit,
             options.type as TransactionType,
             startDate,
