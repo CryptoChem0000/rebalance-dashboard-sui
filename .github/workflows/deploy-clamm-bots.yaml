@@ -370,7 +370,7 @@ jobs:
               --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
               --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
               --values ./charts/values.yaml \
-              --wait --timeout 2m
+              --wait --timeout 5m
 
             echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
             
