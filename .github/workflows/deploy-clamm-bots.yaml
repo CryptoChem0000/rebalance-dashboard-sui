@@ -66,12 +66,19 @@ jobs:
               exit 1
             fi
             
+            # Strip 'v' prefix if present for Docker tags
+            DOCKER_TAG="${LATEST_TAG#v}"
+            
             echo "✅ Latest version found: $LATEST_TAG"
-            echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+            echo "✅ Docker tag to use: $DOCKER_TAG"
+            echo "tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
             echo "is_latest=true" >> $GITHUB_OUTPUT
           else
+            # Strip 'v' prefix if present for any manual input
+            DOCKER_TAG="${INPUT_TAG#v}"
             echo "✅ Using specified tag: $INPUT_TAG"
-            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
+            echo "✅ Docker tag to use: $DOCKER_TAG"
+            echo "tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
             echo "is_latest=false" >> $GITHUB_OUTPUT
           fi
 
