@@ -32,7 +32,7 @@ jobs:
     outputs:
       resolved_tag: ${{ steps.resolve.outputs.tag }}
       is_latest: ${{ steps.resolve.outputs.is_latest }}
-    
+
     steps:
       - name: Resolve image tag
         id: resolve
@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           INPUT_TAG="${{ github.event.inputs.image_tag }}"
-          
+
           if [ "$INPUT_TAG" = "latest" ]; then
             echo "📋 'latest' tag requested, fetching actual latest version..."
             
@@ -345,93 +345,42 @@ jobs:
 
         run: |
           if [ "$ENABLED" == "true" ]; then
-          echo "🚀 Deploying $DEPLOYMENT_NAME..."
-          echo "Using image tag: $IMAGE_TAG"
-          echo "Pool ID: $POOL_ID"
-          echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
-          echo "Position Band: $POSITION_BAND_PERCENTAGE%"
-          echo "Chain: $CHAIN"
-          echo "Watch Frequency: $WATCH_FREQUENCY seconds"
+            echo "🚀 Deploying $DEPLOYMENT_NAME..."
+            echo "Using image tag: $IMAGE_TAG"
+            echo "Pool ID: $POOL_ID"
+            echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
+            echo "Position Band: $POSITION_BAND_PERCENTAGE%"
+            echo "Chain: $CHAIN"
+            echo "Watch Frequency: $WATCH_FREQUENCY seconds"
 
-          # Base64 encode the values
-          export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
-          export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
-          export POOL_ID_B64=$(echo -n "$POOL_ID" | base64)
-          export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
-          export POSITION_BAND_PERCENTAGE_B64=$(echo -n "$POSITION_BAND_PERCENTAGE" | base64)
-          export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
-          export CHAIN_B64=$(echo -n "$CHAIN" | base64)
+            # Base64 encode the values
+            export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
+            export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
+            export POOL_ID_B64=$(echo -n "$POOL_ID" | base64)
+            export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
+            export POSITION_BAND_PERCENTAGE_B64=$(echo -n "$POSITION_BAND_PERCENTAGE" | base64)
+            export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
+            export CHAIN_B64=$(echo -n "$CHAIN" | base64)
 
-          # Deploy using Helm
-          helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
-            --namespace $NAMESPACE \
-            --create-namespace \
-            --set image.repository=${REGISTRY}/${IMAGE_NAME} \
-            --set image.tag=$IMAGE_TAG \
-            --set replicaCount=1 \
-            --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
-            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
-            --set secrets.app-secrets.data.POOL_ID="$POOL_ID_B64" \
-            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
-            --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
-            --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
-            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
-            --values ./charts/values.yaml
-          
-          echo "✅ Helm upgrade completed"
-          
-          # Figure out the actual deployment name
-          ACTUAL_DEPLOYMENT_NAME=""
-          if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
-            ACTUAL_DEPLOYMENT_NAME=$DEPLOYMENT_NAME
-          elif kubectl get deployment ${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
-            ACTUAL_DEPLOYMENT_NAME=${DEPLOYMENT_NAME}-clamm-bot
-          else
-            echo "⚠️  Warning: Could not find deployment with expected names"
-            echo "Checking all deployments in namespace:"
-            kubectl get deployments -n $NAMESPACE
-            exit 1
-          fi
-          
-          echo "📊 Found deployment: $ACTUAL_DEPLOYMENT_NAME"
-          
-          # Wait for rollout
-          echo "⏳ Waiting for rollout to complete..."
-          if ! kubectl rollout status deployment/$ACTUAL_DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s; then
-            echo "⚠️ Deployment did not complete successfully, investigating..."
-            
-            # Get pod status
-            echo "📊 Pod Status:"
-            kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o wide
-            
-            # Describe pods for events
-            echo -e "\n📋 Pod Events:"
-            kubectl describe pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE | grep -A 20 "Events:"
-            
-            # Get logs from any pods that exist
-            echo -e "\n📄 Pod Logs:"
-            PODS=$(kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}')
-            for pod in $PODS; do
-              echo "Logs from $pod:"
-              kubectl logs $pod -n $NAMESPACE --tail=50 || echo "Could not get logs from $pod"
-              
-              # Also check init container logs if any
-              kubectl logs $pod -n $NAMESPACE -c copy-config --tail=20 2>/dev/null || echo "No init container logs"
-            done
-            
-            # Check if it's an image pull issue
-            echo -e "\n🖼️ Checking image pull status:"
-            kubectl get events -n $NAMESPACE --field-selector reason=Failed --sort-by='.lastTimestamp' | grep -i "pull" | tail -10
-            
-            # PVC status
-            echo -e "\n💾 PVC Status:"
-            kubectl get pvc -n $NAMESPACE | grep $DEPLOYMENT_NAME
-            
-            exit 1
-          fi
+            # Deploy using Helm
+            helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
+              --namespace $NAMESPACE \
+              --create-namespace \
+              --set image.repository=${REGISTRY}/${IMAGE_NAME} \
+              --set image.tag=$IMAGE_TAG \
+              --set replicaCount=1 \
+              --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
+              --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
+              --set secrets.app-secrets.data.POOL_ID="$POOL_ID_B64" \
+              --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
+              --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
+              --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
+              --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
+              --values ./charts/values.yaml \
+              --wait --timeout 5m  # Increased from 2m to 5m for safety
 
-          echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
-            
+            echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
+         
           else
             echo "⏸️  Bot $DEPLOYMENT_NAME is disabled (ENABLED=$ENABLED)"
             
@@ -537,11 +486,11 @@ jobs:
           echo ""
           echo "**Requested Tag:** \`${{ github.event.inputs.image_tag }}\`"
           echo "**Deployed Tag:** \`${{ needs.resolve-tag.outputs.resolved_tag }}\`"
-          
+
           if [ "${{ needs.resolve-tag.outputs.is_latest }}" = "true" ]; then
             echo "**Note:** 'latest' was resolved to \`${{ needs.resolve-tag.outputs.resolved_tag }}\`"
           fi
-          
+
           echo "**Deployment Type:** ${{ needs.setup.outputs.deployment_type }}"
           echo ""
 
