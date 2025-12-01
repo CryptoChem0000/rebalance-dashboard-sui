@@ -338,68 +338,61 @@ jobs:
 
         run: |
           if [ "$ENABLED" == "true" ]; then
-            echo "🚀 Deploying $DEPLOYMENT_NAME..."
-            echo "Using image tag: $IMAGE_TAG"
-            
-            # First, let's check if the deployment already exists
-            if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
-              echo "📋 Existing deployment found, checking current state..."
-              kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE
-            fi
-            
-            # Deploy using Helm WITHOUT --wait first to see what happens
-            echo "🔧 Starting Helm upgrade..."
-            helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
-              --namespace $NAMESPACE \
-              --create-namespace \
-              --set image.repository=${REGISTRY}/${IMAGE_NAME} \
-              --set image.tag=$IMAGE_TAG \
-              --set replicaCount=1 \
-              --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
-              --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
-              --set secrets.app-secrets.data.POOL_ID="$POOL_ID_B64" \
-              --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
-              --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
-              --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
-              --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
-              --values ./charts/values.yaml
-            
-            echo "✅ Helm upgrade completed, now monitoring rollout..."
-            
-            # Now manually wait and watch what's happening
-            echo "⏳ Waiting for rollout to complete..."
-            
-            # Give it a moment to create resources
-            sleep 5
-            
-            # Check deployment status
-            echo "📊 Deployment status:"
-            kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE
-            
-            # Check pods
-            echo "📊 Pod status:"
-            kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE
-            
-            # Wait for rollout with a timeout
-            if ! kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s; then
-              echo "⚠️ Rollout did not complete within 5 minutes"
-              
-              # Get debugging info
-              echo "🔍 Debugging information:"
-              
-              echo "Pod details:"
-              kubectl describe pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE
-              
-              echo "Recent events:"
-              kubectl get events --field-selector involvedObject.kind=Pod -n $NAMESPACE --sort-by='.lastTimestamp' | grep -i $DEPLOYMENT_NAME | tail -20
-              
-              echo "Deployment describe:"
-              kubectl describe deployment $DEPLOYMENT_NAME -n $NAMESPACE | tail -50
-              
-              exit 1
-            fi
-            
-            echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
+          echo "🚀 Deploying $DEPLOYMENT_NAME..."
+          echo "Using image tag: $IMAGE_TAG"
+          echo "Pool ID: $POOL_ID"
+          echo "Rebalance Threshold: $REBALANCE_THRESHOLD_PERCENT%"
+          echo "Position Band: $POSITION_BAND_PERCENTAGE%"
+          echo "Chain: $CHAIN"
+          echo "Watch Frequency: $WATCH_FREQUENCY seconds"
+
+          # Base64 encode the values
+          export DATABASE_URL_B64=$(echo -n "$DATABASE_URL" | base64)
+          export MNEMONIC_B64=$(echo -n "$MNEMONIC" | base64)
+          export POOL_ID_B64=$(echo -n "$POOL_ID" | base64)
+          export REBALANCE_THRESHOLD_PERCENT_B64=$(echo -n "$REBALANCE_THRESHOLD_PERCENT" | base64)
+          export POSITION_BAND_PERCENTAGE_B64=$(echo -n "$POSITION_BAND_PERCENTAGE" | base64)
+          export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
+          export CHAIN_B64=$(echo -n "$CHAIN" | base64)
+
+          # Deploy using Helm
+          helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
+            --namespace $NAMESPACE \
+            --create-namespace \
+            --set image.repository=${REGISTRY}/${IMAGE_NAME} \
+            --set image.tag=$IMAGE_TAG \
+            --set replicaCount=1 \
+            --set secrets.app-secrets.data.DATABASE_URL="$DATABASE_URL_B64" \
+            --set secrets.app-secrets.data.MNEMONIC="$MNEMONIC_B64" \
+            --set secrets.app-secrets.data.POOL_ID="$POOL_ID_B64" \
+            --set secrets.app-secrets.data.REBALANCE_THRESHOLD_PERCENT="$REBALANCE_THRESHOLD_PERCENT_B64" \
+            --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
+            --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
+            --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
+            --values ./charts/values.yaml
+          
+          echo "✅ Helm upgrade completed"
+          
+          # Figure out the actual deployment name
+          ACTUAL_DEPLOYMENT_NAME=""
+          if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
+            ACTUAL_DEPLOYMENT_NAME=$DEPLOYMENT_NAME
+          elif kubectl get deployment ${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
+            ACTUAL_DEPLOYMENT_NAME=${DEPLOYMENT_NAME}-clamm-bot
+          else
+            echo "⚠️  Warning: Could not find deployment with expected names"
+            echo "Checking all deployments in namespace:"
+            kubectl get deployments -n $NAMESPACE
+            exit 1
+          fi
+          
+          echo "📊 Found deployment: $ACTUAL_DEPLOYMENT_NAME"
+          
+          # Wait for rollout
+          echo "⏳ Waiting for rollout to complete..."
+          kubectl rollout status deployment/$ACTUAL_DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s
+          
+          echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
             
           else
             echo "⏸️  Bot $DEPLOYMENT_NAME is disabled (ENABLED=$ENABLED)"
