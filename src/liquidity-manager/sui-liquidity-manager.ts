@@ -21,7 +21,7 @@ import {
 } from "../database";
 import { DEFAULT_KEY_NAME, KeyManager, KeyStoreType } from "../key-manager";
 import { ChainInfo, findSuiChainInfo, RegistryToken } from "../registry";
-import { getSignerAddress } from "../utils";
+import { assertEnoughBalanceForFees, getSignerAddress } from "../utils";
 
 import {
   MakeSuiLiquidityManagerParams,
@@ -33,6 +33,7 @@ import {
   WithdrawPositionResult,
   StatusPoolInfo,
 } from "./types";
+import { CETUS_WITHDRAW_LP_POSITION_FEE } from "./constants";
 
 export class SuiLiquidityManager {
   public config: Config;
@@ -107,6 +108,18 @@ export class SuiLiquidityManager {
     let suiBalances = await this.getSuiAccountBalances();
     let hadPosition = false;
     let rebalanced = false;
+
+    // Withdraw unknown existing positions if any
+    const unknownPositionsResult = await this.withdrawUnknownPositions(
+      this.config.positionId,
+      suiBalances
+    );
+
+    // Refresh balance if there were unknown positions
+    if (unknownPositionsResult.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      suiBalances = await this.getSuiAccountBalances();
+    }
 
     // Step 1: Check if we have a position and if it needs rebalancing
     if (this.config.positionId) {
@@ -293,7 +306,7 @@ export class SuiLiquidityManager {
     );
 
     // Perform swap if needed
-    await this.performSwapIfNeeded(
+    const hasSwapped = await this.performSwapIfNeeded(
       currentPoolInfo,
       token0,
       token1,
@@ -303,8 +316,13 @@ export class SuiLiquidityManager {
       idealToken1After
     );
 
+    let finalBalances = innerSuiBalances;
     // Refresh balances after swap
-    const finalBalances = await this.getSuiAccountBalances();
+    if (hasSwapped) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      finalBalances = await this.getSuiAccountBalances();
+    }
+
     const finalBalance0 =
       finalBalances[token0.denom] ?? new TokenAmount(0, token0);
     const finalBalance1 =
@@ -371,7 +389,7 @@ export class SuiLiquidityManager {
       positionSlippage: POSITION_SLIPPAGE,
     });
 
-    this.database.addTransaction({
+    await this.database.addTransaction({
       signerAddress: this.address,
       chainId: this.chainInfo.id,
       transactionType: TransactionType.CREATE_POSITION,
@@ -410,7 +428,7 @@ export class SuiLiquidityManager {
     currentAmount1: BigNumber,
     idealAmount0: BigNumber,
     idealAmount1: BigNumber
-  ): Promise<void> {
+  ): Promise<boolean> {
     const hasExcessToken0 = currentAmount0.gt(idealAmount0);
     const needsMoreToken1 = currentAmount1.lt(idealAmount1);
     const needsMoreToken0 = currentAmount0.lt(idealAmount0);
@@ -445,11 +463,11 @@ export class SuiLiquidityManager {
       swapToToken = token0;
       shouldSwap = true;
     } else {
-      return;
+      return false;
     }
 
     if (!shouldSwap || amountToSwap.lte(0)) {
-      return;
+      return false;
     }
 
     console.log(
@@ -470,7 +488,7 @@ export class SuiLiquidityManager {
         console.log(
           `Swap amount is smaller than minimum output on Bolt exchange. Skipping swap.`
         );
-        return;
+        return false;
       }
     } catch (error) {
       console.log("Could not check minimum swap amount, proceeding with swap");
@@ -499,7 +517,7 @@ export class SuiLiquidityManager {
     );
 
     // Log swap transaction
-    this.database.addTransaction({
+    await this.database.addTransaction({
       signerAddress: this.address,
       chainId: this.chainInfo.id,
       transactionType: TransactionType.BOLT_SUI_SWAP,
@@ -519,7 +537,7 @@ export class SuiLiquidityManager {
     });
 
     console.log(`Swap complete. Tx: ${swapResult.txHash}`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return true;
   }
 
   async getStatus(): Promise<StatusResponse> {
@@ -551,7 +569,7 @@ export class SuiLiquidityManager {
       const position = await this.cetusPoolManager.getPositionInfo(
         this.config.positionId
       );
-      
+
       if (!position) {
         return {
           poolInfo: poolInfo as any,
@@ -582,11 +600,11 @@ export class SuiLiquidityManager {
           ).toString(),
           liquidity: position.liquidity,
           asset0: {
-            amount: '',
+            amount: "",
             denom: this.cetusPoolManager.token0.denom,
           },
           asset1: {
-            amount: '',
+            amount: "",
             denom: this.cetusPoolManager.token1.denom,
           },
           range,
@@ -604,6 +622,8 @@ export class SuiLiquidityManager {
     if (!this.config.poolId || !this.config.positionId) {
       throw new Error("No pool ID or position ID found");
     }
+
+    await this.withdrawUnknownPositions(this.config.positionId);
 
     const withdrawPositionResult = await this.cetusPoolManager.withdrawPosition(
       this.config.positionId
@@ -673,7 +693,7 @@ export class SuiLiquidityManager {
       }
     }
 
-    this.database.addTransactionBatch(transactions);
+    await this.database.addTransactionBatch(transactions);
 
     console.log(
       `Withdrew ${
@@ -696,6 +716,51 @@ export class SuiLiquidityManager {
     await this.saveConfig();
 
     return withdrawPositionResult;
+  }
+
+  private async withdrawUnknownPositions(
+    currentPositionId?: string,
+    suiBalances?: Record<string, TokenAmount>
+  ): Promise<WithdrawPositionResult[]> {
+    const openPositions = await this.cetusPoolManager.getPositions();
+    const unknownPositions = openPositions.filter(
+      (item) => item.pos_object_id !== currentPositionId
+    );
+
+    // Withdraw unknown positions if any
+    const innerSuiBalances =
+      suiBalances ?? (await this.getSuiAccountBalances());
+    assertEnoughBalanceForFees(
+      innerSuiBalances,
+      this.chainInfo.nativeToken,
+      BigNumber(CETUS_WITHDRAW_LP_POSITION_FEE).times(unknownPositions.length),
+      "withdraw unknown positions"
+    );
+    const withdrawnPositions: WithdrawPositionResult[] = [];
+    for (const auxPosition of unknownPositions) {
+      console.log(
+        `Withdrawing unknown position ${auxPosition.pos_object_id}...`
+      );
+      const withdrawResult = await this.cetusPoolManager.withdrawPosition(
+        auxPosition.pos_object_id
+      );
+
+      withdrawnPositions.push(withdrawResult);
+
+      await this.database.addTransaction({
+        signerAddress: this.address,
+        chainId: this.chainInfo.id,
+        transactionType: TransactionType.WITHDRAW_RECONCILIATION,
+        positionId: this.config.positionId,
+        gasFeeAmount: withdrawResult.gasFees?.humanReadableAmount,
+        gasFeeTokenDenom: withdrawResult.gasFees?.token.denom,
+        gasFeeTokenName: withdrawResult.gasFees?.token.name,
+        txHash: withdrawResult.txHash,
+        successful: true,
+      });
+    }
+
+    return withdrawnPositions;
   }
 
   private async getSuiAccountBalances(): Promise<Record<string, TokenAmount>> {

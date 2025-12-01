@@ -358,7 +358,7 @@ export class OsmosisLiquidityManager {
       `Actual deposited amounts: ${result.tokenAmount0.humanReadableAmount} ${this.osmosisPoolManager.token0.name}, ${result.tokenAmount1.humanReadableAmount} ${this.osmosisPoolManager.token1.name}`
     );
 
-    this.database.addTransaction({
+    await this.database.addTransaction({
       signerAddress: this.osmosisAddress,
       chainId: this.osmosisChainInfo.id,
       transactionType: TransactionType.CREATE_POSITION,
@@ -458,7 +458,7 @@ export class OsmosisLiquidityManager {
       liquidityAmount: positionInfo.position.liquidity,
     });
 
-    this.database.addTransactionBatch([
+    await this.database.addTransactionBatch([
       {
         signerAddress: this.osmosisAddress,
         chainId: this.osmosisChainInfo.id,
@@ -552,7 +552,7 @@ export class OsmosisLiquidityManager {
       });
       withdrawnPositions.push(withdrawResult);
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: this.osmosisAddress,
         chainId: this.osmosisChainInfo.id,
         transactionType: TransactionType.WITHDRAW_RECONCILIATION,

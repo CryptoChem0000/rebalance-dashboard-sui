@@ -433,7 +433,7 @@ export class TokenRebalancer {
         this.osmosisChainInfo
       );
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: osmosisAddress,
         chainId: this.osmosisChainInfo.id,
         transactionType: TransactionType.IBC_TRANSFER,
@@ -496,7 +496,7 @@ export class TokenRebalancer {
       this.archwayChainInfo
     );
 
-    this.database.addTransaction({
+    await this.database.addTransaction({
       signerAddress: archwayAddress,
       chainId: this.archwayChainInfo.id,
       transactionType: TransactionType.BOLT_ARCHWAY_SWAP,
@@ -570,7 +570,7 @@ export class TokenRebalancer {
         this.archwayChainInfo
       );
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: archwayAddress,
         chainId: this.archwayChainInfo.id,
         transactionType: TransactionType.IBC_TRANSFER,
@@ -634,7 +634,7 @@ export class TokenRebalancer {
         this.archwayChainInfo
       );
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: archwayAddress,
         chainId: this.archwayChainInfo.id,
         transactionType: TransactionType.IBC_TRANSFER,
@@ -716,7 +716,7 @@ export class TokenRebalancer {
         this.archwayChainInfo
       );
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: archwayAddress,
         chainId: this.archwayChainInfo.id,
         transactionType: TransactionType.IBC_TRANSFER,
@@ -783,7 +783,7 @@ export class TokenRebalancer {
         this.archwayChainInfo
       );
 
-      this.database.addTransaction({
+      await this.database.addTransaction({
         signerAddress: archwayAddress,
         chainId: this.archwayChainInfo.id,
         transactionType: TransactionType.IBC_TRANSFER,
