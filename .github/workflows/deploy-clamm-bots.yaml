@@ -27,8 +27,57 @@ defaults:
     shell: bash
 
 jobs:
+  resolve-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      resolved_tag: ${{ steps.resolve.outputs.tag }}
+      is_latest: ${{ steps.resolve.outputs.is_latest }}
+    
+    steps:
+      - name: Resolve image tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          INPUT_TAG="${{ github.event.inputs.image_tag }}"
+          
+          if [ "$INPUT_TAG" = "latest" ]; then
+            echo "📋 'latest' tag requested, fetching actual latest version..."
+            
+            # Get the latest release tag
+            LATEST_TAG=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/${{ github.repository }}/releases/latest \
+              --jq '.tag_name' 2>/dev/null || echo "")
+            
+            if [ -z "$LATEST_TAG" ]; then
+              echo "No releases found, checking for latest tag..."
+              # Fallback to git tags if no releases
+              LATEST_TAG=$(gh api \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                /repos/${{ github.repository }}/tags \
+                --jq '.[0].name' 2>/dev/null || echo "")
+            fi
+            
+            if [ -z "$LATEST_TAG" ]; then
+              echo "::error::No tags found in repository. Cannot determine latest version."
+              exit 1
+            fi
+            
+            echo "✅ Latest version found: $LATEST_TAG"
+            echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+            echo "is_latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Using specified tag: $INPUT_TAG"
+            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
+            echo "is_latest=false" >> $GITHUB_OUTPUT
+          fi
+
   setup:
     runs-on: ubuntu-latest
+    needs: [resolve-tag]
     outputs:
       environments: ${{ steps.output-matrix.outputs.environments }}
       deployment_type: ${{ steps.determine-type.outputs.type }}
@@ -39,11 +88,11 @@ jobs:
 
       - name: Validate deployment request
         run: |
-          echo "🔍 Will deploy image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}"
+          # Use resolved tag instead of input
+          echo "🔍 Will deploy image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.resolve-tag.outputs.resolved_tag }}"
 
-          # If using 'latest' tag, show warning
-          if [ "${{ github.event.inputs.image_tag }}" == "latest" ]; then
-            echo "⚠️  Using 'latest' tag - this will deploy the most recent release"
+          if [ "${{ needs.resolve-tag.outputs.is_latest }}" = "true" ]; then
+            echo "📌 'latest' was requested, resolved to version: ${{ needs.resolve-tag.outputs.resolved_tag }}"
           fi
 
       - name: Get available environments from GitHub
@@ -172,7 +221,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   deploy:
-    needs: [setup]
+    needs: [setup, resolve-tag]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -272,7 +321,7 @@ jobs:
 
       - name: Deploy or stop bot based on ENABLED status
         env:
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          IMAGE_TAG: ${{ needs.resolve-tag.outputs.resolved_tag }}
           DEPLOYMENT_NAME: ${{ matrix.environment }}
           NAMESPACE: bolt-prod
           ENABLED: ${{ steps.check-enabled.outputs.ENABLED }}
@@ -389,7 +438,7 @@ jobs:
           fi
 
   summary:
-    needs: [deploy, setup]
+    needs: [deploy, setup, resolve-tag]
     runs-on: ubuntu-latest
     if: always()
 
@@ -428,7 +477,13 @@ jobs:
         run: |
           echo "# 📊 Deployment Summary"
           echo ""
-          echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`"
+          echo "**Requested Tag:** \`${{ github.event.inputs.image_tag }}\`"
+          echo "**Deployed Tag:** \`${{ needs.resolve-tag.outputs.resolved_tag }}\`"
+          
+          if [ "${{ needs.resolve-tag.outputs.is_latest }}" = "true" ]; then
+            echo "**Note:** 'latest' was resolved to \`${{ needs.resolve-tag.outputs.resolved_tag }}\`"
+          fi
+          
           echo "**Deployment Type:** ${{ needs.setup.outputs.deployment_type }}"
           echo ""
 
