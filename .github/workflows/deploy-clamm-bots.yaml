@@ -362,7 +362,12 @@ jobs:
             export WATCH_FREQUENCY_B64=$(echo -n "$WATCH_FREQUENCY" | base64)
             export CHAIN_B64=$(echo -n "$CHAIN" | base64)
 
-            # Deploy using Helm
+            # Check current state before deployment
+            echo "📊 Pre-deployment state:"
+            kubectl get deployment -n $NAMESPACE | grep -E "(NAME|$DEPLOYMENT_NAME)" || echo "No matching deployments found"
+            
+            # Deploy using Helm without --wait first
+            echo "🔧 Starting Helm upgrade at $(date)..."
             helm upgrade --install $DEPLOYMENT_NAME $HELM_CHART_PATH \
               --namespace $NAMESPACE \
               --create-namespace \
@@ -377,26 +382,76 @@ jobs:
               --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
               --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
               --values ./charts/values.yaml \
-              --wait --timeout 3m
+              --debug
 
-            # Force restart to ensure new pods with new image and variables
-            echo "🔄 Restarting deployment to ensure fresh pods..."
+            echo "✅ Helm command completed at $(date)"
 
-            # Figure out the actual deployment name (Helm might add -clamm-bot suffix)
+            # Give it a moment to create resources
+            sleep 3
+
+            # Check what Helm created
+            echo "📊 Post-Helm state:"
+            kubectl get all -n $NAMESPACE -l app.kubernetes.io/instance=$DEPLOYMENT_NAME
+
+            # Figure out the actual deployment name
+            echo "🔍 Looking for deployment..."
             ACTUAL_DEPLOYMENT_NAME=""
             if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &> /dev/null; then
               ACTUAL_DEPLOYMENT_NAME=$DEPLOYMENT_NAME
+              echo "Found deployment: $DEPLOYMENT_NAME"
             elif kubectl get deployment ${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE &> /dev/null; then
               ACTUAL_DEPLOYMENT_NAME=${DEPLOYMENT_NAME}-clamm-bot
+              echo "Found deployment: ${DEPLOYMENT_NAME}-clamm-bot"
+            else
+              echo "⚠️  No deployment found with expected names"
+              echo "All deployments in namespace:"
+              kubectl get deployments -n $NAMESPACE
             fi
 
             if [ -n "$ACTUAL_DEPLOYMENT_NAME" ]; then
+              # Check deployment details
+              echo "📋 Deployment details:"
+              kubectl describe deployment $ACTUAL_DEPLOYMENT_NAME -n $NAMESPACE | grep -A 5 -E "(Replicas:|Conditions:|NewReplicaSet:)"
+
+              # Check for pods
+              echo "📊 Pod status:"
+              kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o wide
+
+              # Wait for rollout with detailed status
+              echo "⏳ Waiting for initial rollout to complete..."
+              if ! kubectl rollout status deployment/${ACTUAL_DEPLOYMENT_NAME} -n $NAMESPACE --timeout=300s; then
+                echo "❌ Initial rollout failed/timed out"
+                
+                # Get debugging info
+                echo "🔍 Debugging pod issues:"
+                
+                # Get pod events
+                echo "Pod events:"
+                kubectl get events -n $NAMESPACE --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | grep -i $DEPLOYMENT_NAME | tail -20
+                
+                # Describe pods
+                echo "Pod descriptions:"
+                kubectl describe pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE
+                
+                # Check logs if any pods exist
+                PODS=$(kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}')
+                for pod in $PODS; do
+                  echo "Logs from pod $pod:"
+                  kubectl logs $pod -n $NAMESPACE --tail=50 || echo "Failed to get logs"
+                done
+                
+                exit 1
+              fi
+
+              # Now do the restart
+              echo "🔄 Forcing pod restart at $(date)..."
               kubectl rollout restart deployment/${ACTUAL_DEPLOYMENT_NAME} -n $NAMESPACE
-              kubectl rollout status deployment/${ACTUAL_DEPLOYMENT_NAME} -n $NAMESPACE --timeout=5m
-              echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
+              kubectl rollout status deployment/${ACTUAL_DEPLOYMENT_NAME} -n $NAMESPACE --timeout=300s
+
+              echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG at $(date)"
             else
-              echo "⚠️  Warning: Could not find deployment to restart, but Helm succeeded"
-              echo "✅ Deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
+              echo "⚠️  Warning: Could not find deployment to monitor"
+              echo "✅ Helm deployment completed for $DEPLOYMENT_NAME"
             fi
          
           else
