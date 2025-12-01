@@ -376,9 +376,13 @@ jobs:
               --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
               --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
               --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
-              --set podAnnotations.deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --values ./charts/values.yaml \
               --wait --timeout 3m
+
+            # Force restart to ensure new pods with new image and variables
+            echo "🔄 Restarting deployment to ensure fresh pods..."
+            kubectl rollout restart deployment/${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE
+            kubectl rollout status deployment/${DEPLOYMENT_NAME}-clamm-bot -n $NAMESPACE --timeout=3m
 
             echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
          
