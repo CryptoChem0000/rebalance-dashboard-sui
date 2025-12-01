@@ -390,8 +390,39 @@ jobs:
           
           # Wait for rollout
           echo "⏳ Waiting for rollout to complete..."
-          kubectl rollout status deployment/$ACTUAL_DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s
-          
+          if ! kubectl rollout status deployment/$ACTUAL_DEPLOYMENT_NAME -n $NAMESPACE --timeout=300s; then
+            echo "⚠️ Deployment did not complete successfully, investigating..."
+            
+            # Get pod status
+            echo "📊 Pod Status:"
+            kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o wide
+            
+            # Describe pods for events
+            echo -e "\n📋 Pod Events:"
+            kubectl describe pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE | grep -A 20 "Events:"
+            
+            # Get logs from any pods that exist
+            echo -e "\n📄 Pod Logs:"
+            PODS=$(kubectl get pods -l app.kubernetes.io/instance=$DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}')
+            for pod in $PODS; do
+              echo "Logs from $pod:"
+              kubectl logs $pod -n $NAMESPACE --tail=50 || echo "Could not get logs from $pod"
+              
+              # Also check init container logs if any
+              kubectl logs $pod -n $NAMESPACE -c copy-config --tail=20 2>/dev/null || echo "No init container logs"
+            done
+            
+            # Check if it's an image pull issue
+            echo -e "\n🖼️ Checking image pull status:"
+            kubectl get events -n $NAMESPACE --field-selector reason=Failed --sort-by='.lastTimestamp' | grep -i "pull" | tail -10
+            
+            # PVC status
+            echo -e "\n💾 PVC Status:"
+            kubectl get pvc -n $NAMESPACE | grep $DEPLOYMENT_NAME
+            
+            exit 1
+          fi
+
           echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
             
           else
