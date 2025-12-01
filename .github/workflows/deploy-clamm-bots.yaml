@@ -376,8 +376,9 @@ jobs:
               --set secrets.app-secrets.data.POSITION_BAND_PERCENTAGE="$POSITION_BAND_PERCENTAGE_B64" \
               --set secrets.app-secrets.data.CHAIN="$CHAIN_B64" \
               --set secrets.app-secrets.data.WATCH_FREQUENCY="$WATCH_FREQUENCY_B64" \
+              --set podAnnotations.deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --values ./charts/values.yaml \
-              --wait --timeout 5m  # Increased from 2m to 5m for safety
+              --wait --timeout 3m
 
             echo "✅ Successfully deployed $DEPLOYMENT_NAME with image $IMAGE_TAG"
          
