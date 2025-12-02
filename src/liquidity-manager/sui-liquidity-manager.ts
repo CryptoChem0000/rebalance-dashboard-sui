@@ -13,6 +13,11 @@ import {
 } from "../cetus-integration";
 import { loadConfigWithEnvOverrides } from "./config-loader";
 import {
+  CETUS_CREATE_LP_POSITION_FEE,
+  CETUS_WITHDRAW_LP_POSITION_FEE,
+  SUI_BOLT_SWAP_FEE,
+} from "./constants";
+import {
   AccountTransaction,
   PostgresTransactionRepository,
   SQLiteTransactionRepository,
@@ -33,7 +38,6 @@ import {
   WithdrawPositionResult,
   StatusPoolInfo,
 } from "./types";
-import { CETUS_WITHDRAW_LP_POSITION_FEE } from "./constants";
 
 export class SuiLiquidityManager {
   public config: Config;
@@ -205,7 +209,10 @@ export class SuiLiquidityManager {
   ): Promise<CreatePositionResult> {
     // Constants
     const POSITION_SLIPPAGE = DEFAULT_POSITION_SLIPPAGE; // 1%
-    const GAS_RESERVE = BigNumber(0.1).times(10 ** 9); // 0.1 SUI in smallest unit
+    const GAS_RESERVE = BigNumber(CETUS_CREATE_LP_POSITION_FEE)
+      .plus(CETUS_WITHDRAW_LP_POSITION_FEE)
+      .plus(SUI_BOLT_SWAP_FEE)
+      .times(5);
 
     // Helper function to calculate safe balance
     const calculateSafeBalance = (
@@ -228,25 +235,25 @@ export class SuiLiquidityManager {
     const token1 = this.cetusPoolManager.token1;
 
     // Get current balances
-    const innerSuiBalances =
+    let currentSuiBalances =
       suiBalances ?? (await this.getSuiAccountBalances());
-    const balance0 =
-      innerSuiBalances[token0.denom] ?? new TokenAmount(0, token0);
-    const balance1 =
-      innerSuiBalances[token1.denom] ?? new TokenAmount(0, token1);
+    let currentBalance0 =
+      currentSuiBalances[token0.denom] ?? new TokenAmount(0, token0);
+    let currentBalance1 =
+      currentSuiBalances[token1.denom] ?? new TokenAmount(0, token1);
 
     const nativeTokenDenom = this.chainInfo.nativeToken.denom;
-    const safeBalance0 = calculateSafeBalance(
-      balance0,
+    let safeBalance0 = calculateSafeBalance(
+      currentBalance0,
       token0.denom === nativeTokenDenom
     );
-    const safeBalance1 = calculateSafeBalance(
-      balance1,
+    let safeBalance1 = calculateSafeBalance(
+      currentBalance1,
       token1.denom === nativeTokenDenom
     );
 
     console.log(
-      `Current balances: ${balance0.humanReadableAmount} ${token0.name}, ${balance1.humanReadableAmount} ${token1.name}`
+      `Current balances: ${currentBalance0.humanReadableAmount} ${token0.name}, ${currentBalance1.humanReadableAmount} ${token1.name}`
     );
     console.log(
       `Safe balances (after gas reserve): ${safeBalance0.humanReadableAmount} ${token0.name}, ${safeBalance1.humanReadableAmount} ${token1.name}`
@@ -313,27 +320,27 @@ export class SuiLiquidityManager {
       safeToken0Amount,
       safeToken1Amount,
       idealToken0ToKeep,
-      idealToken1After
+      idealToken1After,
+      currentSuiBalances
     );
 
-    let finalBalances = innerSuiBalances;
     // Refresh balances after swap
     if (hasSwapped) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      finalBalances = await this.getSuiAccountBalances();
+      currentSuiBalances = await this.getSuiAccountBalances();
     }
 
-    const finalBalance0 =
-      finalBalances[token0.denom] ?? new TokenAmount(0, token0);
-    const finalBalance1 =
-      finalBalances[token1.denom] ?? new TokenAmount(0, token1);
+    currentBalance0 =
+      currentSuiBalances[token0.denom] ?? new TokenAmount(0, token0);
+    currentBalance1 =
+      currentSuiBalances[token1.denom] ?? new TokenAmount(0, token1);
 
-    const safeBalance0Final = calculateSafeBalance(
-      finalBalance0,
+    safeBalance0 = calculateSafeBalance(
+      currentBalance0,
       token0.denom === nativeTokenDenom
     );
-    const safeBalance1Final = calculateSafeBalance(
-      finalBalance1,
+    safeBalance1 = calculateSafeBalance(
+      currentBalance1,
       token1.denom === nativeTokenDenom
     );
 
@@ -353,14 +360,14 @@ export class SuiLiquidityManager {
       .toFixed(token1.decimals);
 
     console.log(
-      `Available safe balances after swap: ${safeBalance0Final.humanReadableAmount} ${token0.name}, ${safeBalance1Final.humanReadableAmount} ${token1.name}`
+      `Available safe balances after swap: ${safeBalance0.humanReadableAmount} ${token0.name}, ${safeBalance1.humanReadableAmount} ${token1.name}`
     );
 
     const refreshedPrice = BigNumber(refreshedPriceHumanReadable).shiftedBy(
       token1.decimals - token0.decimals
     );
-    const finalSafeToken0Amount = BigNumber(safeBalance0Final.amount);
-    const finalSafeToken1Amount = BigNumber(safeBalance1Final.amount);
+    const finalSafeToken0Amount = BigNumber(safeBalance0.amount);
+    const finalSafeToken1Amount = BigNumber(safeBalance1.amount);
 
     const finalToken1ValueInToken0 = finalSafeToken1Amount.div(refreshedPrice);
     const finalTotalValueInToken0 = finalSafeToken0Amount.plus(
@@ -379,6 +386,13 @@ export class SuiLiquidityManager {
         new TokenAmount(optimalFinalToken0.toFixed(0), token0)
           .humanReadableAmount
       } ${token0.name}`
+    );
+
+    assertEnoughBalanceForFees(
+      currentSuiBalances,
+      this.chainInfo.nativeToken,
+      BigNumber(CETUS_CREATE_LP_POSITION_FEE),
+      "create position"
     );
 
     const createPositionResult = await this.cetusPoolManager.createPosition({
@@ -427,7 +441,8 @@ export class SuiLiquidityManager {
     currentAmount0: BigNumber,
     currentAmount1: BigNumber,
     idealAmount0: BigNumber,
-    idealAmount1: BigNumber
+    idealAmount1: BigNumber,
+    suiBalances?: Record<string, TokenAmount>
   ): Promise<boolean> {
     const hasExcessToken0 = currentAmount0.gt(idealAmount0);
     const needsMoreToken1 = currentAmount1.lt(idealAmount1);
@@ -500,6 +515,15 @@ export class SuiLiquidityManager {
         new TokenAmount(amountToSwap.toFixed(0), swapFromToken)
           .humanReadableAmount
       } ${swapFromToken.name} for ${swapToToken.name}...`
+    );
+
+    const innerSuiBalances =
+      suiBalances ?? (await this.getSuiAccountBalances());
+    assertEnoughBalanceForFees(
+      innerSuiBalances,
+      this.chainInfo.nativeToken,
+      BigNumber(SUI_BOLT_SWAP_FEE),
+      "swap on Bolt"
     );
 
     const swapResult = await this.boltClient.swap(
@@ -623,7 +647,22 @@ export class SuiLiquidityManager {
       throw new Error("No pool ID or position ID found");
     }
 
-    await this.withdrawUnknownPositions(this.config.positionId);
+    const unknownPositionsResult = await this.withdrawUnknownPositions(
+      this.config.positionId
+    );
+
+    if (unknownPositionsResult.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    const suiBalances = await this.getSuiAccountBalances();
+
+    assertEnoughBalanceForFees(
+      suiBalances,
+      this.chainInfo.nativeToken,
+      CETUS_WITHDRAW_LP_POSITION_FEE,
+      "withdraw position"
+    );
 
     const withdrawPositionResult = await this.cetusPoolManager.withdrawPosition(
       this.config.positionId
