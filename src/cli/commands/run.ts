@@ -173,14 +173,8 @@ async function executeWithTracking(
       console.error("⚠️  Error during execution:", error);
 
       return {
-        poolId:
-          manager instanceof OsmosisLiquidityManager
-            ? manager.config.osmosisPool.id
-            : manager.config.cetusPool.id || "unknown",
-        positionId:
-          manager instanceof OsmosisLiquidityManager
-            ? manager.config.osmosisPosition.id
-            : manager.config.cetusPosition.id || "unknown",
+        poolId: manager.config.poolId || "unknown",
+        positionId: manager.config.positionId || "unknown",
         action: "error" as const,
         message: `Error: ${
           error instanceof Error ? error.message : String(error)
