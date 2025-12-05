@@ -17,6 +17,13 @@ export enum TransactionType {
   WITHDRAW_RECONCILIATION = "withdraw_reconciliation",
 }
 
+export enum PlatformName {
+  BOLT_ARCHWAY = "bolt_archway",
+  BOLT_SUI = "bolt_sui",
+  CETUS = "cetus",
+  OSMOSIS = "osmosis",
+}
+
 export interface AccountTransaction {
   signerAddress: string;
   chainId: string;
@@ -37,6 +44,10 @@ export interface AccountTransaction {
   gasFeeAmount?: string | null;
   gasFeeTokenDenom?: string | null;
   gasFeeTokenName?: string | null;
+  platformName?: string;
+  platformFeeAmount?: string;
+  platformFeeTokenDenom?: string;
+  platformFeeTokenName?: string;
   destinationAddress?: string | null;
   destinationChainId?: string | null;
   txHash: string;

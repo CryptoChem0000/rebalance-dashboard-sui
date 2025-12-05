@@ -6,6 +6,7 @@ import { OsmosisAccount, TokenAmount } from "../account-balances";
 import { loadConfigWithEnvOverrides } from "./config-loader";
 import { OSMOSIS_WITHDRAW_LP_POSITION_FEE } from "./constants";
 import {
+  PlatformName,
   PostgresTransactionRepository,
   SQLiteTransactionRepository,
   TransactionRepository,
@@ -372,6 +373,7 @@ export class OsmosisLiquidityManager {
       gasFeeAmount: result.gasFees?.humanReadableAmount,
       gasFeeTokenDenom: result.gasFees?.token.denom,
       gasFeeTokenName: result.gasFees?.token.name,
+      platformName: PlatformName.OSMOSIS,
       txHash: result.txHash,
       successful: true,
     });
@@ -473,6 +475,7 @@ export class OsmosisLiquidityManager {
         gasFeeAmount: result.gasFees?.humanReadableAmount,
         gasFeeTokenDenom: result.gasFees?.token.denom,
         gasFeeTokenName: result.gasFees?.token.name,
+        platformName: PlatformName.OSMOSIS,
         txHash: result.txHash,
         successful: true,
       },
@@ -490,6 +493,7 @@ export class OsmosisLiquidityManager {
                 result.rewardsCollected[1]?.humanReadableAmount,
               secondOutputTokenDenom: result.rewardsCollected[1]?.token.denom,
               secondOutputTokenName: result.rewardsCollected[1]?.token.name,
+              platformName: PlatformName.OSMOSIS,
               txHash: result.txHash,
               txActionIndex: 1,
               successful: true,
@@ -560,6 +564,7 @@ export class OsmosisLiquidityManager {
         gasFeeAmount: withdrawResult.gasFees?.humanReadableAmount,
         gasFeeTokenDenom: withdrawResult.gasFees?.token.denom,
         gasFeeTokenName: withdrawResult.gasFees?.token.name,
+        platformName: PlatformName.OSMOSIS,
         txHash: withdrawResult.txHash,
         successful: true,
       });

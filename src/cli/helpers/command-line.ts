@@ -95,6 +95,12 @@ export const displayTransactionDetails = (tx: any, index: number) => {
   if (tx.gasFeeAmount && tx.gasFeeTokenName) {
     console.log(`   Gas: ${tx.gasFeeAmount} ${tx.gasFeeTokenName}`);
   }
+  if (tx.platformName) {
+    console.log(`   Platform: ${tx.platformName}`);
+  }
+  if (tx.platformFeeAmount && tx.platformFeeTokenName) {
+    console.log(`   Platform Fee: ${tx.platformFeeAmount} ${tx.platformFeeTokenName}`);
+  }
   if (tx.destinationAddress) {
     console.log(`   Destination: ${tx.destinationAddress}`);
   }

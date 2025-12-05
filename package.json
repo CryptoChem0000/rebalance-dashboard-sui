@@ -43,6 +43,7 @@
     "@bolt-liquidity-hq/sui-client": "^0.1.0-beta.22",
     "@cetusprotocol/common-sdk": "^1.2.8",
     "@cetusprotocol/sui-clmm-sdk": "^1.2.8",
+    "@cosmjs/cosmwasm-stargate": "^0.36.0",
     "@cosmjs/crypto": "^0.36.0",
     "@cosmjs/proto-signing": "^0.36.0",
     "@cosmjs/stargate": "^0.36.0",

@@ -78,6 +78,10 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         gas_fee_amount VARCHAR(78),
         gas_fee_token_denom VARCHAR(100),
         gas_fee_token_name VARCHAR(42),
+        platform_name VARCHAR(100),
+        platform_fee_amount VARCHAR(78),
+        platform_fee_token_denom VARCHAR(100),
+        platform_fee_token_name VARCHAR(42),
         destination_address VARCHAR(42),
         destination_chain_id VARCHAR(42),
         tx_hash VARCHAR(66) NOT NULL,
@@ -109,6 +113,9 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       
       CREATE INDEX IF NOT EXISTS idx_signer_address_timestamp
       ON account_transactions(signer_address, timestamp DESC);
+      
+      CREATE INDEX IF NOT EXISTS idx_platform_name_timestamp
+      ON account_transactions(platform_name, timestamp DESC);
     `);
   }
 
@@ -122,6 +129,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         output_amount, output_token_denom, output_token_name,
         second_output_amount, second_output_token_denom, second_output_token_name,
         gas_fee_amount, gas_fee_token_denom, gas_fee_token_name,
+        platform_name, platform_fee_amount, platform_fee_token_denom, platform_fee_token_name,
         destination_address, destination_chain_id,
         tx_hash, tx_action_index,
         successful, error, timestamp
@@ -132,6 +140,7 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         @outputAmount, @outputTokenDenom, @outputTokenName,
         @secondOutputAmount, @secondOutputTokenDenom, @secondOutputTokenName,
         @gasFeeAmount, @gasFeeTokenDenom, @gasFeeTokenName,
+        @platformName, @platformFeeAmount, @platformFeeTokenDenom, @platformFeeTokenName,
         @destinationAddress, @destinationChainId,
         @txHash, COALESCE(@txActionIndex, 0),
         @successful, @error, COALESCE(@timestamp, strftime('%s', 'now'))
@@ -155,6 +164,10 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         gas_fee_amount = excluded.gas_fee_amount,
         gas_fee_token_denom = excluded.gas_fee_token_denom,
         gas_fee_token_name = excluded.gas_fee_token_name,
+        platform_name = excluded.platform_name,
+        platform_fee_amount = excluded.platform_fee_amount,
+        platform_fee_token_denom = excluded.platform_fee_token_denom,
+        platform_fee_token_name = excluded.platform_fee_token_name,
         destination_address = excluded.destination_address,
         destination_chain_id = excluded.destination_chain_id,
         successful = excluded.successful,
@@ -193,6 +206,10 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       gasFeeAmount: row.gas_fee_amount,
       gasFeeTokenDenom: row.gas_fee_token_denom,
       gasFeeTokenName: row.gas_fee_token_name,
+      platformName: row.platform_name,
+      platformFeeAmount: row.platform_fee_amount,
+      platformFeeTokenDenom: row.platform_fee_token_denom,
+      platformFeeTokenName: row.platform_fee_token_name,
       destinationAddress: row.destination_address,
       destinationChainId: row.destination_chain_id,
       txHash: row.tx_hash,
@@ -225,6 +242,10 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       gasFeeAmount: tx.gasFeeAmount || null,
       gasFeeTokenDenom: tx.gasFeeTokenDenom || null,
       gasFeeTokenName: tx.gasFeeTokenName || null,
+      platformName: tx.platformName || null,
+      platformFeeAmount: tx.platformFeeAmount || null,
+      platformFeeTokenDenom: tx.platformFeeTokenDenom || null,
+      platformFeeTokenName: tx.platformFeeTokenName || null,
       destinationAddress: tx.destinationAddress || null,
       destinationChainId: tx.destinationChainId || null,
       txHash: tx.txHash,

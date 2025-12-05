@@ -10,6 +10,7 @@ import {
   CetusCLPoolManager,
   DEFAULT_POSITION_SLIPPAGE,
   extractGasFees,
+  extractPlatformFees,
 } from "../cetus-integration";
 import { loadConfigWithEnvOverrides } from "./config-loader";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./constants";
 import {
   AccountTransaction,
+  PlatformName,
   PostgresTransactionRepository,
   SQLiteTransactionRepository,
   TransactionRepository,
@@ -423,6 +425,7 @@ export class SuiLiquidityManager {
       gasFeeAmount: createPositionResult.gasFees?.humanReadableAmount,
       gasFeeTokenDenom: createPositionResult.gasFees?.token.denom,
       gasFeeTokenName: createPositionResult.gasFees?.token.name,
+      platformName: PlatformName.CETUS,
       txHash: createPositionResult.txHash,
       successful: true,
     });
@@ -540,6 +543,11 @@ export class SuiLiquidityManager {
       this.chainInfo.nativeToken
     );
 
+    const swapPlatformFees = extractPlatformFees(
+      swapResult.txOutput,
+      swapToToken
+    );
+
     // Log swap transaction
     await this.database.addTransaction({
       signerAddress: this.address,
@@ -556,6 +564,10 @@ export class SuiLiquidityManager {
       gasFeeAmount: swapGasFees.humanReadableAmount,
       gasFeeTokenDenom: swapGasFees.token.denom,
       gasFeeTokenName: swapGasFees.token.name,
+      platformName: PlatformName.BOLT_SUI,
+      platformFeeAmount: swapPlatformFees.humanReadableAmount,
+      platformFeeTokenDenom: swapPlatformFees.token.denom,
+      platformFeeTokenName: swapPlatformFees.token.name,
       txHash: swapResult.txHash,
       successful: true,
     });
@@ -693,6 +705,7 @@ export class SuiLiquidityManager {
         gasFeeAmount: withdrawPositionResult.gasFees?.humanReadableAmount,
         gasFeeTokenDenom: withdrawPositionResult.gasFees?.token.denom,
         gasFeeTokenName: withdrawPositionResult.gasFees?.token.name,
+        platformName: PlatformName.CETUS,
         txHash: withdrawPositionResult.txHash,
         successful: true,
       },
@@ -725,6 +738,7 @@ export class SuiLiquidityManager {
           outputAmount: reward.humanReadableAmount,
           outputTokenDenom: reward.token.denom,
           outputTokenName: reward.token.name,
+          platformName: PlatformName.CETUS,
           txHash: withdrawPositionResult.txHash,
           txActionIndex: i + 1,
           successful: true,
@@ -794,6 +808,7 @@ export class SuiLiquidityManager {
         gasFeeAmount: withdrawResult.gasFees?.humanReadableAmount,
         gasFeeTokenDenom: withdrawResult.gasFees?.token.denom,
         gasFeeTokenName: withdrawResult.gasFees?.token.name,
+        platformName: PlatformName.CETUS,
         txHash: withdrawResult.txHash,
         successful: true,
       });

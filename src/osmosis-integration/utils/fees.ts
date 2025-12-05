@@ -1,3 +1,4 @@
+import { type ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { DeliverTxResponse } from "@cosmjs/stargate";
 import { BigNumber } from "bignumber.js";
 import { EncodeObject } from "osmojs";
@@ -54,4 +55,38 @@ export const extractGasFees = (
   const coinValue = parseStringToCoin(eventEntry);
 
   return parseCoinToTokenAmount(coinValue, tokensMap);
+};
+
+export const extractPlatformFees = (
+  txResponse: ExecuteResult,
+  feeToken: RegistryToken
+): TokenAmount | undefined => {
+  const BOLT_SWAP_EVENT_TYPE = "wasm-bolt_swap";
+  const LP_FEE_AMOUNT_ATTRIBUTE_KEY = "lp_fee_amount";
+  const PROTOCOL_FEE_AMOUNT_ATTRIBUTE_KEY = "protocol_fee_amount";
+
+  const boltSwapEvent = txResponse.events.find(
+    (item) => item.type === BOLT_SWAP_EVENT_TYPE
+  );
+
+  if (!boltSwapEvent) {
+    return undefined;
+  }
+
+  let totalPlatformFee = BigNumber(0);
+
+  for (const eventAttribute of boltSwapEvent.attributes) {
+    if (
+      eventAttribute.key === LP_FEE_AMOUNT_ATTRIBUTE_KEY ||
+      eventAttribute.key === PROTOCOL_FEE_AMOUNT_ATTRIBUTE_KEY
+    ) {
+      totalPlatformFee = totalPlatformFee.plus(eventAttribute.value);
+    }
+  }
+
+  if (totalPlatformFee.isZero()) {
+    return undefined;
+  }
+
+  return new TokenAmount(totalPlatformFee.toFixed(0), feeToken);
 };

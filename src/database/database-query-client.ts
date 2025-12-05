@@ -597,7 +597,8 @@ export class DatabaseQueryClient {
     csv +=
       "Output Amount,Output Token,Second Output Amount,Second Output Token,";
     csv +=
-      "Gas Fee Amount,Gas Fee Token,Destination Address,Destination Chain,Error\n";
+      "Gas Fee Amount,Gas Fee Token,Platform Name,Platform Fee Amount,Platform Fee Token,Platform Name,";
+    csv += "Destination Address,Destination Chain,Error\n";
 
     transactions.forEach((tx) => {
       const timestamp = new Date((tx.timestamp || 0) * 1000).toISOString();
@@ -611,8 +612,11 @@ export class DatabaseQueryClient {
         tx.secondOutputAmount || ""
       }","${tx.secondOutputTokenName || ""}",`;
       csv += `"${tx.gasFeeAmount || ""}","${tx.gasFeeTokenName || ""}","${
-        tx.destinationAddress || ""
-      }","${tx.destinationChainId || ""}","${tx.error || ""}"\n`;
+        tx.platformName || ""
+      }","${tx.platformFeeAmount || ""}","${tx.platformFeeTokenName || ""}",`;
+      csv += `"${tx.destinationAddress || ""}","${
+        tx.destinationChainId || ""
+      }","${tx.error || ""}"\n`;
     });
 
     await writeFile(filepath, csv, "utf-8");

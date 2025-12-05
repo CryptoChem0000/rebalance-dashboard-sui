@@ -28,6 +28,10 @@ model AccountTransaction {
   gasFeeAmount           String?  @map("gas_fee_amount")
   gasFeeTokenDenom       String?  @map("gas_fee_token_denom")
   gasFeeTokenName        String?  @map("gas_fee_token_name")
+  platformName           String?  @map("platform_name")
+  platformFeeAmount      String?  @map("platform_fee_amount")
+  platformFeeTokenDenom  String?  @map("platform_fee_token_denom")
+  platformFeeTokenName   String?  @map("platform_fee_token_name")
   destinationAddress     String?  @map("destination_address")
   destinationChainId     String?  @map("destination_chain_id")
   txHash                 String   @map("tx_hash")
@@ -45,5 +49,6 @@ model AccountTransaction {
   @@index([chainId, txHash])
   @@index([inputTokenName, outputTokenName])
   @@index([signerAddress, timestamp])
+  @@index([platformName, timestamp])
   @@map("account_transactions")
 }

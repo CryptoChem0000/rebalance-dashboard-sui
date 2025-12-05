@@ -15,9 +15,14 @@ import {
   OSMOSIS_IBC_TRANSFER_FEE,
   OSMOSIS_WITHDRAW_LP_POSITION_FEE,
 } from "./constants";
-import { TransactionRepository, TransactionType } from "../database";
+import {
+  PlatformName,
+  TransactionRepository,
+  TransactionType,
+} from "../database";
 import { SkipBridging } from "../ibc-bridging";
 import { AbstractKeyStore } from "../key-manager";
+import { extractPlatformFees } from "../osmosis-integration";
 import { getPairPriceOnBoltArchway } from "../prices";
 import {
   findRegistryTokenEquivalentOnOtherChain,
@@ -496,6 +501,11 @@ export class TokenRebalancer {
       this.archwayChainInfo
     );
 
+    const boltSwapPlatformFees = extractPlatformFees(
+      swapResult.txOutput,
+      boltSwapOutput.token
+    );
+
     await this.database.addTransaction({
       signerAddress: archwayAddress,
       chainId: this.archwayChainInfo.id,
@@ -509,6 +519,10 @@ export class TokenRebalancer {
       gasFeeAmount: boltSwapGasFees?.humanReadableAmount,
       gasFeeTokenDenom: boltSwapGasFees?.token.denom,
       gasFeeTokenName: boltSwapGasFees?.token.name,
+      platformName: PlatformName.BOLT_ARCHWAY,
+      platformFeeAmount: boltSwapPlatformFees?.humanReadableAmount,
+      platformFeeTokenDenom: boltSwapPlatformFees?.token.denom,
+      platformFeeTokenName: boltSwapPlatformFees?.token.name,
       txHash: swapResult.txHash,
       successful: true,
     });
