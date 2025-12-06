@@ -1,0 +1,291 @@
+name: Osmosis RPC Endpoint Tester
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-rpc-endpoints:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Create test script
+      run: |
+        cat > test-endpoints.ts << 'EOF'
+        import { osmosis } from 'osmojs';
+        
+        interface EndpointResult {
+          endpoint: string;
+          status: 'success' | 'failed';
+          error?: string;
+          responseTime?: number;
+          blockHeight?: number;
+        }
+        
+        const RPC_ENDPOINTS = [
+          'https://rpc.osmosis.zone',
+          'https://osmosis-rpc.polkachu.com',
+          'https://rpc-osmosis.blockapsis.com',
+          'https://osmosis-rpc.quickapi.com',
+          'https://rpc-osmosis.ecostake.com',
+          'https://osmosis-rpc.lavenderfive.com',
+          'https://rpc.osmosis.interbloc.org',
+          'https://osmosis.rpc.kjnodes.com',
+          'https://rpc-osmosis.cosmos-spaces.cloud',
+          'https://osmosis-rpc.publicnode.com',
+          'https://rpc.osmosis.strange.love',
+          'https://osmosis.validator.network',
+          'https://rpc-osmosis-ia.cosmosia.notional.ventures',
+          'https://osmosis-rpc.stake-town.com',
+          'https://osmosis.rpc.stakin-nodes.com',
+          'https://rpc-osmosis.whispernode.com',
+          'https://rpc.osmosis.node75.org',
+          'https://osmosis-rpc.w3coins.io',
+          'https://rpc-osmosis.mms.team',
+          'https://osmosis-rpc.enigma-validator.com'
+        ];
+        
+        async function testEndpoint(endpoint: string): Promise<EndpointResult> {
+          const startTime = Date.now();
+          
+          try {
+            console.log(`Testing ${endpoint}...`);
+            
+            const queryClient = await osmosis.ClientFactory.createRPCQueryClient({
+              rpcEndpoint: endpoint,
+            });
+            
+            // Test a simple query to verify the connection works
+            const response = await queryClient.cosmos.base.tendermint.v1beta1.getLatestBlock();
+            const blockHeight = response.block?.header?.height || 'unknown';
+            
+            const responseTime = Date.now() - startTime;
+            
+            return {
+              endpoint,
+              status: 'success',
+              responseTime,
+              blockHeight: parseInt(blockHeight as string)
+            };
+          } catch (error: any) {
+            const responseTime = Date.now() - startTime;
+            
+            // Check if it's a 403 error
+            const is403 = error.message?.includes('403') || 
+                         error.toString().includes('403') ||
+                         error.response?.status === 403;
+            
+            return {
+              endpoint,
+              status: 'failed',
+              error: is403 ? '403 Forbidden' : error.message || error.toString(),
+              responseTime
+            };
+          }
+        }
+        
+        async function main() {
+          console.log('Starting Osmosis RPC endpoint tests...\n');
+          console.log(`Testing ${RPC_ENDPOINTS.length} endpoints\n`);
+          
+          const results: EndpointResult[] = [];
+          
+          // Test endpoints in parallel, but with a limit to avoid rate limiting
+          const BATCH_SIZE = 5;
+          for (let i = 0; i < RPC_ENDPOINTS.length; i += BATCH_SIZE) {
+            const batch = RPC_ENDPOINTS.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(batch.map(testEndpoint));
+            results.push(...batchResults);
+            
+            // Small delay between batches
+            if (i + BATCH_SIZE < RPC_ENDPOINTS.length) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+          
+          // Sort results by status (success first) and then by response time
+          results.sort((a, b) => {
+            if (a.status !== b.status) {
+              return a.status === 'success' ? -1 : 1;
+            }
+            return (a.responseTime || 0) - (b.responseTime || 0);
+          });
+          
+          // Generate summary
+          const successfulEndpoints = results.filter(r => r.status === 'success');
+          const failedWith403 = results.filter(r => r.status === 'failed' && r.error === '403 Forbidden');
+          const failedOther = results.filter(r => r.status === 'failed' && r.error !== '403 Forbidden');
+          
+          console.log('\n========================================');
+          console.log('SUMMARY');
+          console.log('========================================');
+          console.log(`Total endpoints tested: ${results.length}`);
+          console.log(`Successful: ${successfulEndpoints.length}`);
+          console.log(`Failed with 403: ${failedWith403.length}`);
+          console.log(`Failed (other errors): ${failedOther.length}`);
+          console.log('========================================\n');
+          
+          // Print successful endpoints
+          if (successfulEndpoints.length > 0) {
+            console.log('✅ WORKING ENDPOINTS:');
+            console.log('----------------------------------------');
+            successfulEndpoints.forEach(r => {
+              console.log(`${r.endpoint}`);
+              console.log(`   Response time: ${r.responseTime}ms`);
+              console.log(`   Block height: ${r.blockHeight}`);
+            });
+            console.log('');
+          }
+          
+          // Print 403 failures
+          if (failedWith403.length > 0) {
+            console.log('❌ FAILED WITH 403 FORBIDDEN:');
+            console.log('----------------------------------------');
+            failedWith403.forEach(r => {
+              console.log(`${r.endpoint}`);
+            });
+            console.log('');
+          }
+          
+          // Print other failures
+          if (failedOther.length > 0) {
+            console.log('❌ FAILED (OTHER ERRORS):');
+            console.log('----------------------------------------');
+            failedOther.forEach(r => {
+              console.log(`${r.endpoint}`);
+              console.log(`   Error: ${r.error}`);
+            });
+            console.log('');
+          }
+          
+          // Generate JSON report
+          const report = {
+            timestamp: new Date().toISOString(),
+            summary: {
+              total: results.length,
+              successful: successfulEndpoints.length,
+              failed403: failedWith403.length,
+              failedOther: failedOther.length
+            },
+            results: results
+          };
+          
+          // Write JSON report
+          require('fs').writeFileSync('rpc-test-results.json', JSON.stringify(report, null, 2));
+          
+          // Create markdown report
+          const markdown = `# Osmosis RPC Endpoint Test Results
+          
+**Test Date:** ${new Date().toISOString()}
+
+## Summary
+- **Total Endpoints Tested:** ${results.length}
+- **✅ Working:** ${successfulEndpoints.length}
+- **❌ 403 Forbidden:** ${failedWith403.length}
+- **❌ Other Errors:** ${failedOther.length}
+
+## Working Endpoints
+
+| Endpoint | Response Time | Block Height |
+|----------|---------------|--------------|
+${successfulEndpoints.map(r => `| ${r.endpoint} | ${r.responseTime}ms | ${r.blockHeight} |`).join('\n')}
+
+## Failed with 403 Forbidden
+
+| Endpoint |
+|----------|
+${failedWith403.map(r => `| ${r.endpoint} |`).join('\n')}
+
+## Failed (Other Errors)
+
+| Endpoint | Error |
+|----------|-------|
+${failedOther.map(r => `| ${r.endpoint} | ${r.error} |`).join('\n')}
+`;
+          
+          require('fs').writeFileSync('rpc-test-results.md', markdown);
+          
+          // Exit with error if all endpoints failed
+          if (successfulEndpoints.length === 0) {
+            console.error('\n❗ All endpoints failed!');
+            process.exit(1);
+          }
+        }
+        
+        main().catch(error => {
+          console.error('Test failed:', error);
+          process.exit(1);
+        });
+        EOF
+    
+    - name: Create package.json
+      run: |
+        cat > package.json << 'EOF'
+        {
+          "name": "osmosis-rpc-tester",
+          "version": "1.0.0",
+          "type": "module",
+          "scripts": {
+            "test": "tsx test-endpoints.ts"
+          },
+          "dependencies": {
+            "osmojs": "^16.5.1"
+          },
+          "devDependencies": {
+            "@types/node": "^20.0.0",
+            "tsx": "^4.7.0",
+            "typescript": "^5.0.0"
+          }
+        }
+        EOF
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run RPC endpoint tests
+      run: npm test
+      continue-on-error: true
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpc-test-results
+        path: |
+          rpc-test-results.json
+          rpc-test-results.md
+    
+    - name: Display results in summary
+      if: always()
+      run: |
+        if [ -f rpc-test-results.md ]; then
+          echo "## Osmosis RPC Test Results" >> $GITHUB_STEP_SUMMARY
+          cat rpc-test-results.md >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## Test Failed" >> $GITHUB_STEP_SUMMARY
+          echo "No results file generated" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Create issue if all endpoints fail
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `All Osmosis RPC endpoints are failing - ${new Date().toISOString()}`;
+          const body = `All tested Osmosis RPC endpoints failed during the automated test.
+          
+          Please check the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['rpc-issue', 'automated']
+          });
