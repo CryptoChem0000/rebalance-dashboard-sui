@@ -2,8 +2,9 @@ import { ChainInfo, RegistryToken } from "./types";
 
 // MAINNET
 export const DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT =
-  "https://rpc.osmosis.zone:443";
-export const DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT = "https://lcd.osmosis.zone";
+  "https://rpc.lavenderfive.com:443/osmosis";
+export const DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT =
+  "https://rest.lavenderfive.com:443/osmosis";
 export const OSMOSIS_MAINNET_NATIVE_TOKEN: RegistryToken = {
   chainId: "osmosis-1",
   denom: "uosmo",
