@@ -28,6 +28,7 @@ jobs:
           error?: string;
           responseTime?: number;
           blockHeight?: number;
+          poolType?: string;
         }
         
         const RPC_ENDPOINTS = [
@@ -63,17 +64,22 @@ jobs:
               rpcEndpoint: endpoint,
             });
             
-            // Test a simple query to verify the connection works
-            const response = await queryClient.cosmos.base.tendermint.v1beta1.getLatestBlock();
-            const blockHeight = response.block?.header?.height || 'unknown';
+            // Test a pool query to verify the connection works
+            const response = await queryClient.osmosis.poolmanager.v1beta1.pool({
+              poolId: BigInt(1282),
+            });
             
             const responseTime = Date.now() - startTime;
+            
+            // Get pool type from the response if available
+            const poolType = response.pool?.$typeUrl || 'unknown';
             
             return {
               endpoint,
               status: 'success',
               responseTime,
-              blockHeight: parseInt(blockHeight as string)
+              blockHeight: 0, // We're not getting block height anymore, but keeping for compatibility
+              poolType: poolType
             };
           } catch (error: any) {
             const responseTime = Date.now() - startTime;
@@ -140,7 +146,7 @@ jobs:
             successfulEndpoints.forEach(r => {
               console.log(`${r.endpoint}`);
               console.log(`   Response time: ${r.responseTime}ms`);
-              console.log(`   Block height: ${r.blockHeight}`);
+              console.log(`   Pool type: ${r.poolType || 'N/A'}`);
             });
             console.log('');
           }
@@ -184,6 +190,7 @@ jobs:
           // Create markdown report - using string concatenation to avoid template literal issues
           let markdown = '# Osmosis RPC Endpoint Test Results\n\n';
           markdown += '**Test Date:** ' + new Date().toISOString() + '\n\n';
+          markdown += '**Test Query:** Pool #1282 (osmosis.poolmanager.v1beta1.pool)\n\n';
           markdown += '## Summary\n';
           markdown += '- **Total Endpoints Tested:** ' + results.length + '\n';
           markdown += '- **✅ Working:** ' + successfulEndpoints.length + '\n';
@@ -191,10 +198,10 @@ jobs:
           markdown += '- **❌ Other Errors:** ' + failedOther.length + '\n\n';
           
           markdown += '## Working Endpoints\n\n';
-          markdown += '| Endpoint | Response Time | Block Height |\n';
-          markdown += '|----------|---------------||--------------|\n';
+          markdown += '| Endpoint | Response Time | Pool Type |\n';
+          markdown += '|----------|---------------|-----------|\n';
           successfulEndpoints.forEach(r => {
-            markdown += '| ' + r.endpoint + ' | ' + r.responseTime + 'ms | ' + r.blockHeight + ' |\n';
+            markdown += '| ' + r.endpoint + ' | ' + r.responseTime + 'ms | ' + (r.poolType || 'N/A') + ' |\n';
           });
           
           markdown += '\n## Failed with 403 Forbidden\n\n';
