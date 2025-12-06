@@ -2,9 +2,9 @@ import { ChainInfo, RegistryToken } from "./types";
 
 // MAINNET
 export const DEFAULT_OSMOSIS_MAINNET_RPC_ENDPOINT =
-  "https://rpc.lavenderfive.com:443/osmosis";
+  "https://osmosis-rpc.polkachu.com";
 export const DEFAULT_OSMOSIS_MAINNET_REST_ENDPOINT =
-  "https://rest.lavenderfive.com:443/osmosis";
+  "https://osmosis-api.polkachu.com";
 export const OSMOSIS_MAINNET_NATIVE_TOKEN: RegistryToken = {
   chainId: "osmosis-1",
   denom: "uosmo",
