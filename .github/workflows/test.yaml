@@ -20,6 +20,7 @@ jobs:
       run: |
         cat > test-endpoints.ts << 'EOF'
         import { osmosis } from 'osmojs';
+        import * as fs from 'fs';
         
         interface EndpointResult {
           endpoint: string;
@@ -178,39 +179,39 @@ jobs:
           };
           
           // Write JSON report
-          require('fs').writeFileSync('rpc-test-results.json', JSON.stringify(report, null, 2));
+          fs.writeFileSync('rpc-test-results.json', JSON.stringify(report, null, 2));
           
-          // Create markdown report
-          const markdown = `# Osmosis RPC Endpoint Test Results
+          // Create markdown report - using string concatenation to avoid template literal issues
+          let markdown = '# Osmosis RPC Endpoint Test Results\n\n';
+          markdown += '**Test Date:** ' + new Date().toISOString() + '\n\n';
+          markdown += '## Summary\n';
+          markdown += '- **Total Endpoints Tested:** ' + results.length + '\n';
+          markdown += '- **✅ Working:** ' + successfulEndpoints.length + '\n';
+          markdown += '- **❌ 403 Forbidden:** ' + failedWith403.length + '\n';
+          markdown += '- **❌ Other Errors:** ' + failedOther.length + '\n\n';
           
-**Test Date:** ${new Date().toISOString()}
-
-## Summary
-- **Total Endpoints Tested:** ${results.length}
-- **✅ Working:** ${successfulEndpoints.length}
-- **❌ 403 Forbidden:** ${failedWith403.length}
-- **❌ Other Errors:** ${failedOther.length}
-
-## Working Endpoints
-
-| Endpoint | Response Time | Block Height |
-|----------|---------------|--------------|
-${successfulEndpoints.map(r => `| ${r.endpoint} | ${r.responseTime}ms | ${r.blockHeight} |`).join('\n')}
-
-## Failed with 403 Forbidden
-
-| Endpoint |
-|----------|
-${failedWith403.map(r => `| ${r.endpoint} |`).join('\n')}
-
-## Failed (Other Errors)
-
-| Endpoint | Error |
-|----------|-------|
-${failedOther.map(r => `| ${r.endpoint} | ${r.error} |`).join('\n')}
-`;
+          markdown += '## Working Endpoints\n\n';
+          markdown += '| Endpoint | Response Time | Block Height |\n';
+          markdown += '|----------|---------------||--------------|\n';
+          successfulEndpoints.forEach(r => {
+            markdown += '| ' + r.endpoint + ' | ' + r.responseTime + 'ms | ' + r.blockHeight + ' |\n';
+          });
           
-          require('fs').writeFileSync('rpc-test-results.md', markdown);
+          markdown += '\n## Failed with 403 Forbidden\n\n';
+          markdown += '| Endpoint |\n';
+          markdown += '|----------|\n';
+          failedWith403.forEach(r => {
+            markdown += '| ' + r.endpoint + ' |\n';
+          });
+          
+          markdown += '\n## Failed (Other Errors)\n\n';
+          markdown += '| Endpoint | Error |\n';
+          markdown += '|----------|-------|\n';
+          failedOther.forEach(r => {
+            markdown += '| ' + r.endpoint + ' | ' + r.error + ' |\n';
+          });
+          
+          fs.writeFileSync('rpc-test-results.md', markdown);
           
           // Exit with error if all endpoints failed
           if (successfulEndpoints.length === 0) {
