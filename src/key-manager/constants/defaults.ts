@@ -1,0 +1,2 @@
+export const DEFAULT_KEY_NAME = "MNEMONIC";
+export const DEFAULT_SUI_KEY_NAME = "SUI_MNEMONIC";
