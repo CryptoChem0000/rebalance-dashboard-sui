@@ -279,15 +279,44 @@ export class SuiLiquidityManager {
     const bandPercentage = BigNumber(this.config.positionBandPercentage).div(
       100
     );
-    const lowerPrice = BigNumber(currentPriceHumanReadable)
+
+    // Get current tick and tick spacing to ensure bounds are at least 1 tick away
+    const currentTick = currentPoolInfo.current_tick_index;
+    const tickSpacing = Number(currentPoolInfo.tick_spacing);
+
+    // Calculate minimum lower and upper prices based on tick spacing
+    const minLowerTick = currentTick - tickSpacing;
+    const minUpperTick = currentTick + tickSpacing;
+
+    const minLowerPrice = TickMath.tickIndexToPrice(
+      minLowerTick,
+      token0.decimals,
+      token1.decimals
+    );
+    const minUpperPrice = TickMath.tickIndexToPrice(
+      minUpperTick,
+      token0.decimals,
+      token1.decimals
+    );
+
+    // Calculate band-based prices
+    const bandLowerPrice = BigNumber(currentPriceHumanReadable)
       .times(BigNumber(1).minus(bandPercentage))
       .toFixed(token1.decimals);
-    const upperPrice = BigNumber(currentPriceHumanReadable)
+    const bandUpperPrice = BigNumber(currentPriceHumanReadable)
       .times(BigNumber(1).plus(bandPercentage))
       .toFixed(token1.decimals);
 
+    // Use the wider of band-based or tick-based bounds to ensure at least 1 tick spacing
+    const lowerPrice = BigNumber.min(bandLowerPrice, minLowerPrice).toFixed(
+      token1.decimals
+    );
+    const upperPrice = BigNumber.max(bandUpperPrice, minUpperPrice).toFixed(
+      token1.decimals
+    );
+
     console.log(
-      `Price range: ${lowerPrice} - ${upperPrice} (current: ${currentPriceHumanReadable.toString()})`
+      `Price range: ${lowerPrice} - ${upperPrice} (current: ${currentPriceHumanReadable.toString()}, tick spacing: ${tickSpacing})`
     );
 
     const safeToken0Amount = BigNumber(safeBalance0.amount);
@@ -295,10 +324,33 @@ export class SuiLiquidityManager {
     const token1ValueInToken0 = safeToken1Amount.div(currentPrice);
     const totalValueInToken0 = safeToken0Amount.plus(token1ValueInToken0);
 
-    // Based on empirical observation, Cetus requires much more token1 than theory suggests
-    // Let's use a very conservative approach: assume we can only use about 30-40% of our total value as token0
-    const conservativeToken0Ratio = 0.35; // Use only 35% of total value as token0
-    const idealToken0ToKeep = totalValueInToken0.times(conservativeToken0Ratio);
+    // Calculate the actual ratio needed based on price range position
+    // For concentrated liquidity, the ratio depends on where current price is in the range
+    const currentPriceBN = BigNumber(currentPriceHumanReadable);
+    const lowerPriceBN = BigNumber(lowerPrice);
+    const upperPriceBN = BigNumber(upperPrice);
+
+    // Using the formula: token0_ratio = (sqrt(upper) - sqrt(current)) / (sqrt(upper) - sqrt(lower))
+    const sqrtCurrent = currentPriceBN.sqrt();
+    const sqrtLower = lowerPriceBN.sqrt();
+    const sqrtUpper = upperPriceBN.sqrt();
+
+    // This gives us the proportion of value that should be in token0
+    const token0Ratio = sqrtUpper
+      .minus(sqrtCurrent)
+      .div(sqrtUpper.minus(sqrtLower))
+      .toNumber();
+
+    // Clamp between 0.1 and 0.9 for safety
+    const safeToken0Ratio = Math.max(0.1, Math.min(0.9, token0Ratio));
+
+    console.log(
+      `Calculated token0 ratio based on price position: ${(
+        safeToken0Ratio * 100
+      ).toFixed(2)}%`
+    );
+
+    const idealToken0ToKeep = totalValueInToken0.times(safeToken0Ratio);
 
     // For swap calculation, estimate token1 needs conservatively
     const idealToken1After = totalValueInToken0
@@ -354,12 +406,37 @@ export class SuiLiquidityManager {
       token1.decimals
     );
 
-    const refreshedLowerPrice = BigNumber(refreshedPriceHumanReadable)
+    // Recalculate tick-based bounds with refreshed pool
+    const refreshedCurrentTick = refreshedPool.current_tick_index;
+    const refreshedMinLowerTick = refreshedCurrentTick - tickSpacing;
+    const refreshedMinUpperTick = refreshedCurrentTick + tickSpacing;
+
+    const refreshedMinLowerPrice = TickMath.tickIndexToPrice(
+      refreshedMinLowerTick,
+      token0.decimals,
+      token1.decimals
+    );
+    const refreshedMinUpperPrice = TickMath.tickIndexToPrice(
+      refreshedMinUpperTick,
+      token0.decimals,
+      token1.decimals
+    );
+
+    const refreshedBandLowerPrice = BigNumber(refreshedPriceHumanReadable)
       .times(BigNumber(1).minus(bandPercentage))
       .toFixed(token1.decimals);
-    const refreshedUpperPrice = BigNumber(refreshedPriceHumanReadable)
+    const refreshedBandUpperPrice = BigNumber(refreshedPriceHumanReadable)
       .times(BigNumber(1).plus(bandPercentage))
       .toFixed(token1.decimals);
+
+    const refreshedLowerPrice = BigNumber.min(
+      refreshedBandLowerPrice,
+      refreshedMinLowerPrice
+    ).toFixed(token1.decimals);
+    const refreshedUpperPrice = BigNumber.max(
+      refreshedBandUpperPrice,
+      refreshedMinUpperPrice
+    ).toFixed(token1.decimals);
 
     console.log(
       `Available safe balances after swap: ${safeBalance0.humanReadableAmount} ${token0.name}, ${safeBalance1.humanReadableAmount} ${token1.name}`
@@ -376,8 +453,24 @@ export class SuiLiquidityManager {
       finalToken1ValueInToken0
     );
 
-    // Use the same conservative approach for final calculation
-    const conservativeToken0RatioFinal = 0.35; // Use only 35% of total value as token0
+    // Recalculate ratio with refreshed prices
+    const refreshedLowerPriceBN = BigNumber(refreshedLowerPrice);
+    const refreshedUpperPriceBN = BigNumber(refreshedUpperPrice);
+
+    const finalSqrtCurrent = BigNumber(refreshedPriceHumanReadable).sqrt();
+    const finalSqrtLower = refreshedLowerPriceBN.sqrt();
+    const finalSqrtUpper = refreshedUpperPriceBN.sqrt();
+
+    const finalToken0Ratio = finalSqrtUpper
+      .minus(finalSqrtCurrent)
+      .div(finalSqrtUpper.minus(finalSqrtLower))
+      .toNumber();
+
+    const conservativeToken0RatioFinal = Math.max(
+      0.1,
+      Math.min(0.9, finalToken0Ratio)
+    );
+
     const optimalFinalToken0 = BigNumber.min(
       finalTotalValueInToken0.times(conservativeToken0RatioFinal),
       finalSafeToken0Amount
