@@ -31,7 +31,7 @@
     "profit": "tsx src/cli/index.ts profit",
     "stats": "tsx src/cli/index.ts stats",
     "sui": "tsx src/cli/index.ts sui",
-    "swap:usdc-to-sui": "tsx scripts/swap-usdc-to-sui.ts",
+    "monitor": "tsx src/cli/index.ts monitor",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
@@ -40,11 +40,10 @@
   "dependencies": {
     "@archway-kit/utils": "^0.5.52",
     "@archwayhq/arch3.js": "^0.7.5",
-    "@bolt-liquidity-hq/cosmwasm-client": "^0.1.0-beta.24",
-    "@bolt-liquidity-hq/sui-client": "^0.1.0-beta.24",
+    "@bolt-liquidity-hq/cosmwasm-client": "^0.1.0-beta.22",
+    "@bolt-liquidity-hq/sui-client": "^0.1.0-beta.22",
     "@cetusprotocol/common-sdk": "^1.2.8",
     "@cetusprotocol/sui-clmm-sdk": "^1.2.8",
-    "@cosmjs/cosmwasm-stargate": "^0.36.0",
     "@cosmjs/crypto": "^0.36.0",
     "@cosmjs/proto-signing": "^0.36.0",
     "@cosmjs/stargate": "^0.36.0",
@@ -69,6 +68,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@types/node": "^24.10.0"
   }
 }

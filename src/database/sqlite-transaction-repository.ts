@@ -12,7 +12,6 @@ import {
   VolumeByToken,
   ProfitabilityByToken,
   TransactionTypeSummary,
-  SignerAddresses,
 } from "./types";
 
 export class SQLiteTransactionRepository implements TransactionRepository {
@@ -78,10 +77,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         gas_fee_amount VARCHAR(78),
         gas_fee_token_denom VARCHAR(100),
         gas_fee_token_name VARCHAR(42),
-        platform_name VARCHAR(100),
-        platform_fee_amount VARCHAR(78),
-        platform_fee_token_denom VARCHAR(100),
-        platform_fee_token_name VARCHAR(42),
         destination_address VARCHAR(42),
         destination_chain_id VARCHAR(42),
         tx_hash VARCHAR(66) NOT NULL,
@@ -93,28 +88,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         PRIMARY KEY (chain_id, tx_hash, tx_action_index)
       )
     `);
-
-    // Migrate existing tables: Add missing columns if they don't exist
-    try {
-      const tableInfo = this.db.prepare("PRAGMA table_info(account_transactions)").all() as Array<{ name: string }>;
-      const columnNames = tableInfo.map((col) => col.name);
-
-      if (!columnNames.includes("platform_name")) {
-        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_name VARCHAR(100)");
-      }
-      if (!columnNames.includes("platform_fee_amount")) {
-        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_amount VARCHAR(78)");
-      }
-      if (!columnNames.includes("platform_fee_token_denom")) {
-        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_token_denom VARCHAR(100)");
-      }
-      if (!columnNames.includes("platform_fee_token_name")) {
-        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_token_name VARCHAR(42)");
-      }
-    } catch (error) {
-      // If migration fails, log but don't crash - table might be in an inconsistent state
-      console.warn("Warning: Database migration check failed:", error);
-    }
 
     // Create indexes for common queries
     this.db.exec(`
@@ -135,9 +108,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       
       CREATE INDEX IF NOT EXISTS idx_signer_address_timestamp
       ON account_transactions(signer_address, timestamp DESC);
-      
-      CREATE INDEX IF NOT EXISTS idx_platform_name_timestamp
-      ON account_transactions(platform_name, timestamp DESC);
     `);
   }
 
@@ -151,7 +121,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         output_amount, output_token_denom, output_token_name,
         second_output_amount, second_output_token_denom, second_output_token_name,
         gas_fee_amount, gas_fee_token_denom, gas_fee_token_name,
-        platform_name, platform_fee_amount, platform_fee_token_denom, platform_fee_token_name,
         destination_address, destination_chain_id,
         tx_hash, tx_action_index,
         successful, error, timestamp
@@ -162,7 +131,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         @outputAmount, @outputTokenDenom, @outputTokenName,
         @secondOutputAmount, @secondOutputTokenDenom, @secondOutputTokenName,
         @gasFeeAmount, @gasFeeTokenDenom, @gasFeeTokenName,
-        @platformName, @platformFeeAmount, @platformFeeTokenDenom, @platformFeeTokenName,
         @destinationAddress, @destinationChainId,
         @txHash, COALESCE(@txActionIndex, 0),
         @successful, @error, COALESCE(@timestamp, strftime('%s', 'now'))
@@ -186,10 +154,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
         gas_fee_amount = excluded.gas_fee_amount,
         gas_fee_token_denom = excluded.gas_fee_token_denom,
         gas_fee_token_name = excluded.gas_fee_token_name,
-        platform_name = excluded.platform_name,
-        platform_fee_amount = excluded.platform_fee_amount,
-        platform_fee_token_denom = excluded.platform_fee_token_denom,
-        platform_fee_token_name = excluded.platform_fee_token_name,
         destination_address = excluded.destination_address,
         destination_chain_id = excluded.destination_chain_id,
         successful = excluded.successful,
@@ -228,10 +192,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       gasFeeAmount: row.gas_fee_amount,
       gasFeeTokenDenom: row.gas_fee_token_denom,
       gasFeeTokenName: row.gas_fee_token_name,
-      platformName: row.platform_name,
-      platformFeeAmount: row.platform_fee_amount,
-      platformFeeTokenDenom: row.platform_fee_token_denom,
-      platformFeeTokenName: row.platform_fee_token_name,
       destinationAddress: row.destination_address,
       destinationChainId: row.destination_chain_id,
       txHash: row.tx_hash,
@@ -264,10 +224,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       gasFeeAmount: tx.gasFeeAmount || null,
       gasFeeTokenDenom: tx.gasFeeTokenDenom || null,
       gasFeeTokenName: tx.gasFeeTokenName || null,
-      platformName: tx.platformName || null,
-      platformFeeAmount: tx.platformFeeAmount || null,
-      platformFeeTokenDenom: tx.platformFeeTokenDenom || null,
-      platformFeeTokenName: tx.platformFeeTokenName || null,
       destinationAddress: tx.destinationAddress || null,
       destinationChainId: tx.destinationChainId || null,
       txHash: tx.txHash,
@@ -278,26 +234,16 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     };
   }
 
-  // Helper method to normalize signer addresses
-  private normalizeAddresses(signerAddress: SignerAddresses): string[] {
-    if (Array.isArray(signerAddress)) {
-      return signerAddress;
-    }
-    return [signerAddress];
-  }
-
-  // Helper method to build filters with multi-address support
+  // Helper method to build filters
   private buildFilters(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): string {
     let filter = "";
 
     if (signerAddress !== undefined) {
-      const addresses = this.normalizeAddresses(signerAddress);
-      const addressList = addresses.map((addr) => `'${addr}'`).join(",");
-      filter += ` AND signer_address IN (${addressList})`;
+      filter += ` AND signer_address = '${signerAddress}'`;
     }
 
     if (startTime !== undefined) {
@@ -309,26 +255,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
     }
 
     return filter;
-  }
-
-  // Helper to get the last transaction for profitability exclusion
-  private getLastTransaction(
-    signerAddress?: SignerAddresses,
-    startTime?: Date,
-    endTime?: Date
-  ): AccountTransaction | null {
-    const filters = this.buildFilters(signerAddress, startTime, endTime);
-
-    const query = this.db.prepare(`
-      SELECT tx_hash, tx_action_index, transaction_type
-      FROM account_transactions
-      WHERE 1=1 ${filters}
-      ORDER BY timestamp DESC, tx_action_index DESC
-      LIMIT 1
-    `);
-
-    const row = query.get();
-    return this.rowToTransaction(row);
   }
 
   addTransaction(tx: AccountTransaction): void {
@@ -356,57 +282,57 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getAccountTransactions(
-    signerAddress: SignerAddresses,
+    signerAddress: string,
     limit: number = 100,
     offset: number = 0,
     startTime?: Date,
     endTime?: Date
   ): AccountTransaction[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       SELECT * FROM account_transactions 
       WHERE 1=1 ${filters}
       ORDER BY timestamp DESC, tx_action_index
       LIMIT ? OFFSET ?
     `);
-
+    
     const rows = query.all(limit, offset);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
   getTransactionsByType(
     transactionType: TransactionType,
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     limit: number = 100,
     startTime?: Date,
     endTime?: Date
   ): AccountTransaction[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
     let typeFilter = "";
-
+    
     if (transactionType) {
       typeFilter = ` AND transaction_type = '${transactionType}'`;
     }
-
+    
     const query = this.db.prepare(`
       SELECT * FROM account_transactions 
       WHERE 1=1 ${typeFilter} ${filters}
       ORDER BY timestamp DESC, tx_action_index
       LIMIT ?
     `);
-
+    
     const rows = query.all(limit);
     return rows.map((row) => this.rowToTransaction(row)!);
   }
 
   getAccountStats(
-    signerAddress: SignerAddresses,
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): AccountStats[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       WITH account_summary AS (
         SELECT
@@ -434,12 +360,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getArchwayBoltVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       WITH bolt_volumes AS (
         SELECT 
@@ -502,12 +428,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getOsmosisVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       WITH osmosis_volumes AS (
         SELECT 
@@ -570,12 +496,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getBridgeVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       WITH bridge_volumes AS (
         SELECT 
@@ -616,21 +542,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getProfitability(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): ProfitabilityByToken[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
-    // Get last transaction if needed
-    const lastTx = this.getLastTransaction(signerAddress, startTime, endTime);
-
-    // Build exclusion filter
-    let excludeFilter = "";
-    if (lastTx && lastTx.transactionType === "create_position") {
-      excludeFilter = ` AND NOT (tx_hash = '${lastTx.txHash}' AND tx_action_index = ${lastTx.txActionIndex})`;
-    }
-
+    
     const query = this.db.prepare(`
       WITH token_flows AS (
         -- All payments (negative values)
@@ -646,7 +563,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND input_amount IS NOT NULL 
             AND input_token_name IS NOT NULL
             ${filters}
-            ${excludeFilter}
           
           UNION ALL
           
@@ -657,7 +573,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND second_input_amount IS NOT NULL 
             AND second_input_token_name IS NOT NULL
             ${filters}
-            ${excludeFilter}
           
           UNION ALL
           
@@ -668,7 +583,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND gas_fee_amount IS NOT NULL 
             AND gas_fee_token_name IS NOT NULL
             ${filters}
-            ${excludeFilter}
         ) AS payments
         GROUP BY token_name
         
@@ -687,7 +601,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND output_amount IS NOT NULL 
             AND output_token_name IS NOT NULL
             ${filters}
-            ${excludeFilter}
           
           UNION ALL
           
@@ -698,7 +611,6 @@ export class SQLiteTransactionRepository implements TransactionRepository {
             AND second_output_amount IS NOT NULL 
             AND second_output_token_name IS NOT NULL
             ${filters}
-            ${excludeFilter}
         ) AS receipts
         GROUP BY token_name
       ),
@@ -728,12 +640,12 @@ export class SQLiteTransactionRepository implements TransactionRepository {
   }
 
   getTransactionTypeSummary(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): TransactionTypeSummary[] {
     const filters = this.buildFilters(signerAddress, startTime, endTime);
-
+    
     const query = this.db.prepare(`
       SELECT 
         transaction_type as transactionType,

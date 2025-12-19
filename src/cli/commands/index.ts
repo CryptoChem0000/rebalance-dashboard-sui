@@ -7,4 +7,5 @@ export * from "./sui";
 export * from "./transactions";
 export * from "./volume";
 export * from "./withdraw";
+export * from "./monitor";
 export * from "./rebalance-dashboard";

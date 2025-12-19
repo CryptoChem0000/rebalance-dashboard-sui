@@ -3,7 +3,6 @@ import {
   ProfitabilityByToken,
   TransactionTypeSummary,
   VolumeByToken,
-  SignerAddresses,
 } from "./queries";
 
 export enum TransactionType {
@@ -15,13 +14,6 @@ export enum TransactionType {
   WITHDRAW_POSITION = "withdraw_position",
   IBC_TRANSFER = "ibc_transfer",
   WITHDRAW_RECONCILIATION = "withdraw_reconciliation",
-}
-
-export enum PlatformName {
-  BOLT_ARCHWAY = "bolt_archway",
-  BOLT_SUI = "bolt_sui",
-  CETUS = "cetus",
-  OSMOSIS = "osmosis",
 }
 
 export interface AccountTransaction {
@@ -44,10 +36,6 @@ export interface AccountTransaction {
   gasFeeAmount?: string | null;
   gasFeeTokenDenom?: string | null;
   gasFeeTokenName?: string | null;
-  platformName?: string;
-  platformFeeAmount?: string;
-  platformFeeTokenDenom?: string;
-  platformFeeTokenName?: string;
   destinationAddress?: string | null;
   destinationChainId?: string | null;
   txHash: string;
@@ -70,7 +58,7 @@ export interface TransactionRepository {
     chainId: string
   ): AccountTransaction[] | Promise<AccountTransaction[]>;
   getAccountTransactions(
-    signerAddress: SignerAddresses,
+    signerAddress: string,
     limit?: number,
     offset?: number,
     startTime?: Date,
@@ -78,39 +66,38 @@ export interface TransactionRepository {
   ): AccountTransaction[] | Promise<AccountTransaction[]>;
   getTransactionsByType(
     transactionType: TransactionType,
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     limit?: number,
     startTime?: Date,
     endTime?: Date
   ): AccountTransaction[] | Promise<AccountTransaction[]>;
   getAccountStats(
-    signerAddress: SignerAddresses,
+    signerAddress: string,
     startTime?: Date,
     endTime?: Date
   ): AccountStats[] | Promise<AccountStats[]>;
   getArchwayBoltVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] | Promise<VolumeByToken[]>;
   getOsmosisVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] | Promise<VolumeByToken[]>;
   getBridgeVolume(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): VolumeByToken[] | Promise<VolumeByToken[]>;
   getProfitability(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
-    endTime?: Date,
-    excludeLastCreatePosition?: boolean
+    endTime?: Date
   ): ProfitabilityByToken[] | Promise<ProfitabilityByToken[]>;
   getTransactionTypeSummary(
-    signerAddress?: SignerAddresses,
+    signerAddress?: string,
     startTime?: Date,
     endTime?: Date
   ): TransactionTypeSummary[] | Promise<TransactionTypeSummary[]>;

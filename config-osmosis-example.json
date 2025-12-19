@@ -1,7 +1,0 @@
-{
-  "rebalanceThresholdPercent": 95,
-  "poolId": "1282",
-  "positionId": "",
-  "positionBandPercentage": 1,
-  "chain": "osmosis"
-}

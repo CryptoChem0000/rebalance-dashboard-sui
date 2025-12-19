@@ -5,7 +5,7 @@ import BigNumber from "bignumber.js";
 import { TransactionType } from "../../database/types";
 import { SQLiteTransactionRepository, PostgresTransactionRepository } from "../../database";
 import { getSignerAddress } from "../../utils";
-import { KeyManager, KeyStoreType, DEFAULT_KEY_NAME } from "../../key-manager";
+import { KeyManager, KeyStoreType, DEFAULT_SUI_KEY_NAME } from "../../key-manager";
 import { findSuiChainInfo } from "../../registry";
 
 const SUI_POOL_ID = "0x21167b2e981e2c0a693afcfe882a3a827d663118e19afcb92e45bfe43fe56278";
@@ -30,14 +30,6 @@ interface SwapBuyBreakdown {
   timestamp: number;
 }
 
-interface DailyVolume {
-  date: Date;
-  dateString: string;
-  volumeUSD: BigNumber;
-  transactionCount: number;
-}
-
-
 export function rebalanceDashboardCommand(program: Command) {
   program
     .command("rebalance-dashboard")
@@ -56,7 +48,7 @@ export function rebalanceDashboardCommand(program: Command) {
       const keyStore = await KeyManager.create({
         type: KeyStoreType.ENV_VARIABLE,
       });
-      const suiSigner = await keyStore.getSuiSigner(DEFAULT_KEY_NAME);
+      const suiSigner = await keyStore.getSuiSigner(DEFAULT_SUI_KEY_NAME);
       const address = await getSignerAddress(suiSigner);
       const chainInfo = findSuiChainInfo("mainnet");
       
@@ -153,13 +145,6 @@ export function rebalanceDashboardCommand(program: Command) {
             new Date()
           );
 
-          // Calculate daily volume for current day and previous 5 days (UTC)
-          const dailyVolumes = await calculateDailyVolumes(
-            database,
-            address,
-            tokenPrices
-          );
-
           // Calculate swap_buy breakdown
           const swapBuyBreakdown: SwapBuyBreakdown[] = [];
           for (const tx of swapBuyTransactions) {
@@ -209,8 +194,7 @@ export function rebalanceDashboardCommand(program: Command) {
             tokenPrices,
             swapBuyBreakdown,
             previousBalances,
-            currentBalances,
-            dailyVolumes
+            currentBalances
           );
 
           // Update previous balances for next refresh
@@ -254,99 +238,13 @@ export function rebalanceDashboardCommand(program: Command) {
     });
 }
 
-/**
- * Calculate daily volumes for current day and previous 5 days (UTC)
- */
-async function calculateDailyVolumes(
-  database: any,
-  address: string,
-  tokenPrices: Map<string, BigNumber>
-): Promise<DailyVolume[]> {
-  const dailyVolumes: DailyVolume[] = [];
-  const now = new Date();
-  const suiPrice = tokenPrices.get("sui") || new BigNumber(0);
-  const usdcPrice = tokenPrices.get("usdc") || new BigNumber(1);
-
-  // Calculate UTC day boundaries for current day and previous 5 days
-  for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
-    const targetDate = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() - dayOffset,
-      0, 0, 0, 0
-    ));
-    
-    const nextDay = new Date(targetDate);
-    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-
-    // Get all BOLT_SUI_SWAP transactions for this UTC day
-    const dayTransactions = await database.getTransactionsByType(
-      TransactionType.BOLT_SUI_SWAP,
-      address,
-      10000, // Large limit to get all transactions
-      targetDate,
-      nextDay
-    );
-
-    // Calculate total volume in USD for this day
-    let totalVolumeUSD = new BigNumber(0);
-    let transactionCount = 0;
-
-    for (const tx of dayTransactions) {
-      if (tx.successful && (tx.inputAmount || tx.outputAmount)) {
-        transactionCount++;
-        
-        // Calculate volume from input and output
-        const inputTokenLower = (tx.inputTokenDenom || "").toLowerCase();
-        const outputTokenLower = (tx.outputTokenDenom || "").toLowerCase();
-        
-        let inputPrice = new BigNumber(0);
-        let outputPrice = new BigNumber(0);
-        
-        if (inputTokenLower.includes("sui")) {
-          inputPrice = suiPrice;
-        } else if (inputTokenLower.includes("usdc")) {
-          inputPrice = usdcPrice;
-        }
-        
-        if (outputTokenLower.includes("sui")) {
-          outputPrice = suiPrice;
-        } else if (outputTokenLower.includes("usdc")) {
-          outputPrice = usdcPrice;
-        }
-
-        // Volume is calculated from input amount (standard for swap volume)
-        if (tx.inputAmount) {
-          const inputUSD = new BigNumber(tx.inputAmount).multipliedBy(inputPrice);
-          totalVolumeUSD = totalVolumeUSD.plus(inputUSD);
-        } else if (tx.outputAmount) {
-          // Fallback to output if input not available
-          const outputUSD = new BigNumber(tx.outputAmount).multipliedBy(outputPrice);
-          totalVolumeUSD = totalVolumeUSD.plus(outputUSD);
-        }
-      }
-    }
-
-    const dateString = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-    dailyVolumes.push({
-      date: targetDate,
-      dateString,
-      volumeUSD: totalVolumeUSD,
-      transactionCount,
-    });
-  }
-
-  return dailyVolumes;
-}
-
 function displayFormattedDashboard(
   suiPool: any,
   usdcPool: any,
   tokenPrices: Map<string, BigNumber>,
   swapBuyBreakdown: SwapBuyBreakdown[],
   previousBalances: PoolBalances | null,
-  currentBalances: PoolBalances,
-  dailyVolumes: DailyVolume[]
+  currentBalances: PoolBalances
 ) {
   const width = 78;
   const border = "╠" + "═".repeat(width) + "╣";
@@ -569,53 +467,6 @@ function displayFormattedDashboard(
     console.log("║" + firstRunLine.padEnd(width) + "║");
     console.log(border);
   }
-
-  // Display DAILY VOLUME section
-  const dailyVolumeTitle = "  📅 DAILY BOT VOLUME (UTC)";
-  console.log("║" + dailyVolumeTitle.padEnd(width) + "║");
-  console.log(border);
-
-  if (dailyVolumes.length === 0) {
-    const noVolumeLine = "  No volume data available";
-    console.log("║" + noVolumeLine.padEnd(width) + "║");
-  } else {
-    // Header
-    const headerLine = `  Date         | Volume (USD)    | Transactions`;
-    console.log("║" + headerLine.padEnd(width) + "║");
-    console.log(border);
-    
-    // Display current day (index 0) first
-    const today = dailyVolumes[0];
-    const todayLabel = today.dateString === new Date().toISOString().split('T')[0] ? "Today" : today.dateString;
-    const todayVolumeStr = formatUSD(today.volumeUSD);
-    const todayLine = `  ${todayLabel.padEnd(12)} | ${todayVolumeStr.padStart(15)} | ${today.transactionCount.toString().padStart(4)} txns`;
-    console.log("║" + todayLine.padEnd(width) + "║");
-    
-    // Display previous 5 days
-    if (dailyVolumes.length > 1) {
-      for (let i = 1; i < dailyVolumes.length; i++) {
-        const day = dailyVolumes[i];
-        const dayLabel = day.dateString;
-        const dayVolumeStr = formatUSD(day.volumeUSD);
-        const dayLine = `  ${dayLabel.padEnd(12)} | ${dayVolumeStr.padStart(15)} | ${day.transactionCount.toString().padStart(4)} txns`;
-        console.log("║" + dayLine.padEnd(width) + "║");
-      }
-    }
-
-    // Calculate total for all 6 days
-    const totalVolume = dailyVolumes.reduce(
-      (sum, day) => sum.plus(day.volumeUSD),
-      new BigNumber(0)
-    );
-    const totalTxns = dailyVolumes.reduce(
-      (sum, day) => sum + day.transactionCount,
-      0
-    );
-    const totalVolumeStr = formatUSD(totalVolume);
-    const totalLine = `  ${"Total (6 days)".padEnd(12)} | ${totalVolumeStr.padStart(15)} | ${totalTxns.toString().padStart(4)} txns`;
-    console.log("║" + totalLine.padEnd(width) + "║");
-  }
-  console.log(border);
 
   console.log(bottom);
 }

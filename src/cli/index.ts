@@ -11,6 +11,7 @@ import {
   transactionsCommand,
   statsCommand,
   suiCommand,
+  monitorCommand,
   rebalanceDashboardCommand,
 } from "./commands";
 
@@ -33,6 +34,7 @@ profitCommand(program);
 transactionsCommand(program);
 statsCommand(program);
 suiCommand(program);
+monitorCommand(program);
 rebalanceDashboardCommand(program);
 
 program.parse();

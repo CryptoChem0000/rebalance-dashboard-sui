@@ -1,372 +1,66 @@
-# External LP Rebalance with Bolt
+# Rebalance Dashboard for Sui
 
-## 🎯 What Does This Do?
+Real-time monitoring dashboard for Bolt liquidity pools on Sui blockchain.
 
-This tool automatically manages your liquidity positions on Osmosis DEX. When you provide liquidity on Osmosis, you need to keep your position "in range" to earn fees. This tool:
+## Features
 
-1. **Creates liquidity positions** for you automatically
-2. **Monitors** if your position goes out of range
-3. **Rebalances** your position when needed (withdraws and recreates it)
-4. **Uses Bolt on Archway** to get better prices when rebalancing
-5. **Tracks all your transactions** in a database for analysis
+- 📊 **Real-time Pool Monitoring**: Track SUI and USDC pool balances
+- 💰 **Price Tracking**: Live token prices from multiple sources
+- 🔄 **Swap_buy Breakdown**: Detailed analysis of swap transactions
+- 📈 **Balance Change Tracking**: Monitor pool balance changes over time
+- 📜 **Historical Comparison**: Compare current and previous values side-by-side
+- ⏱️ **Auto-refresh**: Configurable automatic refresh intervals
 
-## 📦 Supported Assets
-
-Currently supported token pairs when CHAIN=osmosis:
-- **ATOM/USDC** (default configuration - Pool 1282)
-- **Any pool** containing these supported tokens:
-  - ATOM (Cosmos Hub)
-  - USDC (Noble)
-  - OSMO (Osmosis)
-  - TIA (Celestia)
-  - INJ (Injective)
-  - WBTC (Wrapped Bitcoin via Osmosis)
-  - WETH (Wrapped Ethereum via Axelar)
-  - AKT (Akash)
-  - ARCH (Archway)
-
-Currently supported token pairs when CHAIN=sui:
-- **USDC/SUI** (for example Pool 0xb8d7d9e66a60c239e7a60110efcf8de6c705580ed924d0dde141f4a0e2c90105)
-
-## 🚀 Getting Started (Step by Step)
-
-### Prerequisites
-
-Before you start, you'll need:
-- A computer with Node.js installed (version 16 or higher)
-- Some OSMO tokens on Osmosis (for gas fees - at least 3 OSMO)
-- Some ARCH tokens on Archway (for gas fees - at least 30 ARCH)
-- Tokens to provide as liquidity (e.g., ATOM and USDC)
-- Basic familiarity with using a terminal/command line
-
-### Step 1: Installation
-
-1. Download or clone this project to your computer
-2. Open a terminal in the project folder
-3. Run this command:
+## Quick Start
 
 ```bash
+# Install dependencies
 npm install
+
+# Install grpcurl (required)
+brew install grpcurl
+
+# Run the dashboard
+npm run cli -- rebalance-dashboard --refresh 100
 ```
 
-### Step 2: Set Up Your Wallet
+## Documentation
 
-1. Create a new file called `.env` in the project folder
-2. Add your wallet's secret phrase (mnemonic) to it:
+- **[README-REBALANCE-DASHBOARD.md](README-REBALANCE-DASHBOARD.md)** - Complete usage guide
+- **[INSTALLATION.md](INSTALLATION.md)** - Detailed installation instructions
+- **[PACKAGE-CONTENTS.md](PACKAGE-CONTENTS.md)** - Package structure overview
 
-```
-MNEMONIC="your twelve or twenty four word secret phrase goes here"
-```
+## Requirements
 
-⚠️ **SECURITY WARNING**: 
-- Never share your mnemonic with anyone!
-- Use a dedicated wallet for this tool, not your main wallet
-- Only keep the funds you want to manage in this wallet
-- The wallet must be the same on both Osmosis and Archway chains
+- Node.js (v16+)
+- grpcurl
+- npm packages (see package.json)
 
-### Step 3: Configure Your Settings
-
-The `config.json` file controls how the tool operates:
-
-```json
-{
-  "rebalanceThresholdPercent": 95,
-  "poolId": "1282",
-  "positionId": "",
-  "positionBandPercentage": 1,
-  "chain": "osmosis"
-}
-```
-
-**What these settings mean:**
-- `rebalanceThresholdPercent`: When your position is 95% out of balance, it rebalances
-- `id`: The Osmosis pool ID (find your pool at app.osmosis.zone/pools)
-- `token0/token1`: The token addresses in the pool
-- `tickSpacing`: How precise the price ranges are (100 is standard)
-- `spreadFactor`: The fee tier (0.0005 = 0.05% fees)
-- `bandPercentage`: Your position's price range width (1 = ±1% from current price)
-
-**Finding Your Pool:**
-1. Go to [app.osmosis.zone/pools](https://app.osmosis.zone/pools)
-2. Find a concentrated liquidity pool with your desired tokens
-3. The pool ID is in the URL (e.g., /pool/1282)
-
-**Environment Variable Overrides:**
-You can override config settings using environment variables:
-- `REBALANCE_THRESHOLD_PERCENT` - When to rebalance (default: from config)
-- `POOL_ID` - Override the pool ID
-- `POSITION_BAND_PERCENTAGE` - Position range width
-- `CHAIN`- Chain to use, could be osmosis or sui
-- `WATCH_FREQUENCY` - Check interval in seconds (default: 300)
-
-## 📋 Available Commands
-
-### Check Your Status
-
-See your current pool and position status:
+## Usage
 
 ```bash
-npm run status
+# Single run
+npm run cli -- rebalance-dashboard
+
+# Auto-refresh every 100 seconds
+npm run cli -- rebalance-dashboard --refresh 100
+
+# Custom endpoint
+npm run cli -- rebalance-dashboard --endpoint YOUR_ENDPOINT:PORT
+
+# Debug mode
+npm run cli -- rebalance-dashboard --debug
 ```
 
-Shows:
-- Your pool information
-- Current position details
-- Whether your position is in range
-- Visual representation of position balance
+## What It Monitors
 
-### Create or Rebalance Position
+- **SUI Pool**: `0x21167b2e981e2c0a693afcfe882a3a827d663118e19afcb92e45bfe43fe56278`
+- **USDC Pool**: `0x34fcaa553f1185e1c3a05de37b6a4d10c39535d19f9c8581eeae826434602b58`
 
-Run the liquidity management process:
+## License
 
-```bash
-npm start
-```
+See package.json for license information.
 
-This will:
-- Create a position if you don't have one
-- Rebalance if your position is out of range
-- Bridge tokens between chains if needed
-- Swap tokens on Bolt for better prices
+## Contributing
 
-### Watch Mode (Automatic Monitoring)
-
-Keep the tool running and check every 5 minutes:
-
-```bash
-npm start -- --watch 300
-```
-
-Change `300` to any number of seconds (e.g., 600 for 10 minutes).
-
-### Withdraw Your Position
-
-Remove all liquidity and get your tokens back:
-
-```bash
-npm run withdraw
-```
-
-### View Reports and Statistics
-
-```bash
-# Full report of all activity
-npm run report
-
-# Trading volume breakdown
-npm run volume
-
-# Profitability analysis
-npm run profit
-
-# Transaction statistics
-npm run stats
-```
-
-Add `-- --csv` to any report command to export to CSV files in the `reports/` folder.
-
-### Using with Custom Log Files
-
-Add `-- --log-file mylog.log` to any command to use a specific log file name.
-
-### Disable writing to log files
-
-Add `-- --no-log` to any command so no log files are written.
-
-### Change config file location
-
-Add `-- --config-file myconfig.json` to use another file instead of `config.json`.
-
-## 🎮 Example Workflows
-
-### First Time Setup
-
-```bash
-# 1. Check initial status
-npm run status
-
-# 2. Create your first position
-npm start
-
-# 3. Verify it was created
-npm run status
-```
-
-### Daily Management
-
-```bash
-# Option 1: Manual check and rebalance
-npm run status
-npm start  # Only rebalances if needed
-
-# Option 2: Continuous monitoring
-npm start -- --watch 600  # Checks every 10 minutes
-```
-
-### Using Different Pools
-
-To use a different pool, edit `config.json`:
-
-```json
-{
-  "osmosisPool": {
-    "id": "1265",  // OSMO/USDC pool
-    "token0": "",  // Leave empty - will be auto-filled
-    "token1": "",  // Leave empty - will be auto-filled
-    "tickSpacing": 0,  // Leave as 0 - will be auto-filled
-    "spreadFactor": 0  // Leave as 0 - will be auto-filled
-  }
-}
-```
-
-The tool will automatically fetch and update the pool parameters.
-
-### Weekly Analysis
-
-```bash
-# Check your profits
-npm run profit
-
-# View volume statistics
-npm run volume
-
-# Generate full report
-npm run report -- --csv
-```
-
-### Emergency Exit
-
-```bash
-# Withdraw everything immediately
-npm run withdraw
-
-# Verify withdrawal
-npm run status
-```
-
-## 📊 Understanding the Output
-
-### Position Range Visual
-
-When you run `status`, you'll see:
-
-```
-0%                       50%                      100%
-[=======================●-------------------------]
-```
-
-- The `●` shows your current position
-- Near 0%: Your position holds mostly token1 (token0 price went up)
-- Near 100%: Your position holds mostly token0 (token0 price went down)
-- The tool rebalances at 5% or 95% by default
-
-### Transaction Database
-
-All operations are recorded in a local SQLite database:
-- Located in `database/[your-address].db`
-- Tracks swaps, bridges, position changes
-- Used for profit/loss calculations
-
-### Log Files
-
-Detailed logs are saved in the `logs/` folder:
-- Each run creates a timestamped log file
-- Check these if something goes wrong
-- Contains detailed transaction information
-
-### CSV Reports
-
-Reports can be exported to the `reports/` folder:
-- Transaction history
-- Volume analysis by token
-- Profitability breakdown
-- Statistical summaries
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**"Not enough OSMO balance for paying gas fees"**
-- You need at least 0.1 OSMO on Osmosis for transactions
-- Keep extra for multiple operations
-
-**"Not enough ARCH balance for paying gas fees"**
-- You need at least 1 ARCH on Archway for swaps/bridges
-- Required when rebalancing positions
-
-**"Position out of range"**
-- This is normal and why the tool exists!
-- Run `npm start` to rebalance
-
-**"Token not found in registry"**
-- The pool uses tokens not yet supported by this tool
-- Check the supported assets list above
-
-**"No pool configured yet"**
-- The config file needs a pool ID
-- Find a pool ID from app.osmosis.zone/pools
-
-**"Transaction failed"**
-- Check the log files for detailed errors
-- Ensure sufficient gas on both chains
-- Try running the command again
-
-## 🛡️ Security Best Practices
-
-1. **Wallet Security**
-   - Use a dedicated wallet for this tool
-   - Never use your main wallet
-   - Keep minimal funds (only what you're managing)
-
-2. **Backup Your Keys**
-   - Save your mnemonic phrase securely
-   - Never share it with anyone
-   - Consider using a hardware wallet for large amounts
-
-3. **Monitor Your Positions**
-   - Check status regularly even in watch mode
-   - Review transaction logs
-   - Verify balances match expectations
-
-4. **Environment Files**
-   - Never commit `.env` to version control
-   - Set file permissions to restrict access
-   - Use strong mnemonics (24 words preferred)
-
-## 📈 Understanding Costs
-
-Running this tool involves several costs:
-
-1. **Gas Fees**
-   - Osmosis: ~0.025-0.1 OSMO per transaction
-   - Archway: ~0.1-0.3 ARCH per transaction
-
-2. **Swap Fees**
-   - Bolt swap fee: Variable based on liquidity
-   - Bridge fees: Minimal IBC transfer costs
-
-3. **Position Management**
-   - Creating position: ~0.02 OSMO
-   - Withdrawing position: ~0.03 OSMO
-   - Each rebalance: Full cycle of withdraw + bridge + swap + create
-
-## 🆘 Getting Help
-
-1. **Check the documentation**
-   - Review this README carefully
-   - Look at example commands
-
-2. **Examine logs**
-   - Check `logs/` folder for detailed errors
-   - Look for specific transaction hashes
-
-3. **Verify balances**
-   - Ensure sufficient tokens on both chains
-   - Check gas token balances
-
-4. **Common fixes**
-   - Restart the tool
-   - Update to latest version
-   - Verify network connectivity
-
----
+This is a monitoring tool for Bolt liquidity pools. For issues or questions, please open an issue on GitHub.
