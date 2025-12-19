@@ -114,8 +114,12 @@ export class CetusCLPoolManager {
     };
 
     let finalToken0ToUse = BigNumber(params.token0MaxAmount);
+    let useFixToken1 = false;
+    let addLiquidityResult: CalculateAddLiquidityResult | undefined = undefined;
 
-    let addLiquidityResult =
+    // Try fixing token0 first
+    try {
+      addLiquidityResult =
       await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
         add_mode_params: rangeParams,
         pool_id: this.poolId,
@@ -170,6 +174,87 @@ export class CetusCLPoolManager {
           } token0`
         );
       }
+      }
+    } catch (error: any) {
+      // If fixing token0 fails (e.g., "upper tick cannot calculate liquidity by coinA"),
+      // try fixing token1 instead
+      if (
+        error?.message?.includes("cannot calculate liquidity") ||
+        error?.message?.includes("upper tick") ||
+        error?.message?.includes("lower tick")
+      ) {
+        console.log(
+          "Cannot calculate liquidity by fixing token0, trying to fix token1 instead..."
+        );
+        useFixToken1 = true;
+
+        const finalToken1ToUse = BigNumber(params.token1MaxAmount);
+        addLiquidityResult =
+          await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+            add_mode_params: rangeParams,
+            pool_id: this.poolId,
+            slippage: POSITION_SLIPPAGE,
+            coin_amount: finalToken1ToUse.toFixed(0),
+            fix_amount_a: false,
+          });
+
+        const requiredToken0WithSlippage = BigNumber(
+          addLiquidityResult.coin_amount_limit_a
+        );
+
+        if (requiredToken0WithSlippage.gt(params.token0MaxAmount)) {
+          console.log(
+            "Need to reduce token1 amount as we don't have enough token0 with slippage..."
+          );
+
+          // Binary search for optimal amount
+          let newAmount = BigNumber(finalToken1ToUse);
+          let newLiquidityResult: CalculateAddLiquidityResult | undefined =
+            undefined;
+
+          for (let i = 0; i < 5; i++) {
+            newAmount = newAmount.times(0.9).decimalPlaces(0);
+            try {
+              const testResult =
+                await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice(
+                  {
+                    add_mode_params: rangeParams,
+                    pool_id: this.poolId,
+                    slippage: POSITION_SLIPPAGE,
+                    coin_amount: newAmount.toFixed(0),
+                    fix_amount_a: false,
+                  }
+                );
+
+              const testToken0Required = BigNumber(
+                testResult.coin_amount_limit_a
+              );
+
+              if (testToken0Required.lte(params.token0MaxAmount)) {
+                newLiquidityResult = testResult;
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+
+          if (newAmount.gt(0) && newLiquidityResult) {
+            addLiquidityResult = newLiquidityResult;
+            console.log(
+              `Adjusted to use ${
+                new TokenAmount(newAmount, this.token1).humanReadableAmount
+              } token1`
+            );
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    if (!addLiquidityResult) {
+      throw new Error("Failed to calculate add liquidity result");
     }
 
     let payload: Transaction | undefined = undefined;
@@ -194,8 +279,9 @@ export class CetusCLPoolManager {
           error?.message?.includes("expect")
         ) {
           payloadCreationAttempts++;
+          const tokenName = useFixToken1 ? this.token1.name : this.token0.name;
           console.warn(
-            `Payload creation failed due to insufficient balance (attempt ${payloadCreationAttempts}/${maxPayloadAttempts}). Reducing token0 amount...`
+            `Payload creation failed due to insufficient balance (attempt ${payloadCreationAttempts}/${maxPayloadAttempts}). Reducing ${tokenName} amount...`
           );
 
           if (payloadCreationAttempts >= maxPayloadAttempts) {
@@ -204,6 +290,23 @@ export class CetusCLPoolManager {
             );
           }
 
+          if (useFixToken1) {
+            // Reduce token1 and recalculate
+            const currentToken1Amount = BigNumber(
+              addLiquidityResult.coin_amount_limit_b
+            );
+            const newToken1Amount = currentToken1Amount.times(0.9).decimalPlaces(0);
+
+            addLiquidityResult =
+              await this.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+                add_mode_params: rangeParams,
+                pool_id: this.poolId,
+                slippage: POSITION_SLIPPAGE,
+                coin_amount: newToken1Amount.toFixed(0),
+                fix_amount_a: false,
+              });
+          } else {
+            // Reduce token0 and recalculate
           finalToken0ToUse = finalToken0ToUse.times(0.9).decimalPlaces(0);
 
           addLiquidityResult =
@@ -214,6 +317,7 @@ export class CetusCLPoolManager {
               coin_amount: finalToken0ToUse.toFixed(0),
               fix_amount_a: true,
             });
+          }
         } else {
           throw error;
         }
@@ -224,11 +328,26 @@ export class CetusCLPoolManager {
       throw new Error("Failed to create payload");
     }
 
-    const txResult = await this.cetusSdk.FullClient.executeTx(
+    let txResult;
+    try {
+      txResult = await this.cetusSdk.FullClient.executeTx(
       this.signer,
       payload,
       false
     );
+    } catch (error: any) {
+      // Check for tick range validation errors
+      if (
+        error?.cause?.effects?.status?.error?.includes("check_position_tick_range") ||
+        error?.message?.includes("check_position_tick_range") ||
+        error?.cause?.executionErrorSource?.includes("check_position_tick_range")
+      ) {
+        throw new Error(
+          `Invalid tick range: The price range may be too narrow or invalid. Try increasing the band percentage in your config. Error: ${error.message || error.cause?.effects?.status?.error || "Unknown"}`
+        );
+      }
+      throw error;
+    }
 
     if (!txResult || !txResult.events) {
       throw new Error(

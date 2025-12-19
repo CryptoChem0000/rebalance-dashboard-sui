@@ -30,6 +30,25 @@ export const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+// Interruptible sleep that checks for shutdown requests
+export const interruptibleSleep = async (
+  ms: number,
+  checkShutdown: () => boolean,
+  checkInterval: number = 1000
+): Promise<void> => {
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < ms) {
+    if (checkShutdown()) {
+      return; // Exit early if shutdown requested
+    }
+    
+    const remaining = ms - (Date.now() - startTime);
+    const sleepTime = Math.min(checkInterval, remaining);
+    await new Promise((resolve) => setTimeout(resolve, sleepTime));
+  }
+};
+
 export const parseDateOptions = (options: { start?: string; end?: string }) => {
   let startDate: Date | undefined;
   let endDate: Date | undefined;

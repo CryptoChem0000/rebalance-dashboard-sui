@@ -7,25 +7,43 @@ import { getWorkingDirectory } from "../utils";
 
 import type { Config } from "./types";
 
-export const loadConfigWithEnvOverrides = async (
+// Sui-specific config structure (supports both old and new formats)
+type SuiConfigFile = {
+  rebalanceThresholdPercent?: number;
+  // Old format
+  cetusPool?: {
+    id: string;
+  };
+  cetusPosition?: {
+    id?: string;
+    bandPercentage: number;
+  };
+  // New format (also supported)
+  poolId?: string;
+  positionId?: string;
+  positionBandPercentage?: number;
+  chain?: string;
+  slippage?: number;
+};
+
+export const loadSuiConfigWithEnvOverrides = async (
   configFilePath?: string,
   envFilePath?: string
 ): Promise<{ config: Config; configFilePath: string }> => {
-  // Get config path
+  // Get config path - default to sui-config.json for Sui
   const workingDir = await getWorkingDirectory();
   const finalConfigFilePath =
-    configFilePath ?? path.join(workingDir, "config.json");
+    configFilePath ?? path.join(workingDir, "sui-config.json");
 
   // Try to load default config, but don't fail if it doesn't exist
-  let defaultConfig: Config | null = null;
+  let defaultConfig: SuiConfigFile | null = null;
   let configFileExists = false;
 
   try {
     if (existsSync(finalConfigFilePath)) {
       configFileExists = true;
       const configContent = await fs.readFile(finalConfigFilePath, "utf-8");
-
-      defaultConfig = JSON.parse(configContent) as Config;
+      defaultConfig = JSON.parse(configContent) as SuiConfigFile;
       console.log("Loaded config from file:", finalConfigFilePath);
     } else {
       console.log(
@@ -62,20 +80,26 @@ export const loadConfigWithEnvOverrides = async (
   // Process.env takes precedence over .env file
   const finalEnvVars = { ...envVars, ...process.env };
 
-  // Build config from environment variables and defaults
+  // Map sui-config.json structure to Config type (supports both old and new formats)
   const config: Config = {
     rebalanceThresholdPercent: finalEnvVars.REBALANCE_THRESHOLD_PERCENT
       ? parseFloat(finalEnvVars.REBALANCE_THRESHOLD_PERCENT)
       : defaultConfig?.rebalanceThresholdPercent ?? 0,
-    poolId: finalEnvVars.POOL_ID || defaultConfig?.poolId || "",
-    positionId: defaultConfig?.positionId || "",
+    poolId:
+      finalEnvVars.POOL_ID ||
+      defaultConfig?.poolId ||
+      defaultConfig?.cetusPool?.id ||
+      "",
+    positionId:
+      defaultConfig?.positionId ||
+      defaultConfig?.cetusPosition?.id ||
+      "",
     positionBandPercentage: finalEnvVars.POSITION_BAND_PERCENTAGE
       ? parseFloat(finalEnvVars.POSITION_BAND_PERCENTAGE)
-      : defaultConfig?.positionBandPercentage ?? 0,
-    chain:
-      finalEnvVars.CHAIN === "osmosis" || finalEnvVars.CHAIN === "sui"
-        ? finalEnvVars.CHAIN
-        : defaultConfig?.chain ?? "osmosis",
+      : defaultConfig?.positionBandPercentage ??
+        defaultConfig?.cetusPosition?.bandPercentage ??
+        0,
+    chain: "sui",
     slippage: finalEnvVars.SLIPPAGE
       ? parseFloat(finalEnvVars.SLIPPAGE)
       : defaultConfig?.slippage,
@@ -85,7 +109,7 @@ export const loadConfigWithEnvOverrides = async (
   const missingFields: string[] = [];
 
   if (!config.poolId) {
-    missingFields.push("Config: poolId | Env Variable: POOL_ID");
+    missingFields.push("Config: cetusPool.id | Env Variable: POOL_ID");
   }
 
   if (
@@ -102,7 +126,7 @@ export const loadConfigWithEnvOverrides = async (
     !finalEnvVars.POSITION_BAND_PERCENTAGE
   ) {
     missingFields.push(
-      "Config: positionBandPercentage | Env Variable: POSITION_BAND_PERCENTAGE"
+      "Config: cetusPosition.bandPercentage | Env Variable: POSITION_BAND_PERCENTAGE"
     );
   }
 
@@ -110,21 +134,31 @@ export const loadConfigWithEnvOverrides = async (
     throw new Error(
       `Missing required configuration. ` +
         `Config file ${configFileExists ? "was found but" : "not found and"} ` +
-        `the following required fields are missing from both the config file environment variables:\n` +
+        `the following required fields are missing from both the config file and environment variables:\n` +
         missingFields.map((field) => `  - ${field}`).join("\n")
     );
   }
 
   // Save config to file if it doesn't exist or if it changed
+  // Use new format for saving (more consistent with Config type)
   try {
+    const suiConfigToSave: SuiConfigFile = {
+      rebalanceThresholdPercent: config.rebalanceThresholdPercent,
+      poolId: config.poolId,
+      positionId: config.positionId,
+      positionBandPercentage: config.positionBandPercentage,
+      chain: "sui",
+      ...(config.slippage !== undefined && { slippage: config.slippage }),
+    };
+
     if (
       !configFileExists ||
       (defaultConfig &&
-        JSON.stringify(config) !== JSON.stringify(defaultConfig))
+        JSON.stringify(suiConfigToSave) !== JSON.stringify(defaultConfig))
     ) {
       await fs.writeFile(
         finalConfigFilePath,
-        JSON.stringify(config, undefined, 2),
+        JSON.stringify(suiConfigToSave, undefined, 2),
         "utf-8"
       );
       console.log(
@@ -140,3 +174,4 @@ export const loadConfigWithEnvOverrides = async (
 
   return { config, configFilePath: finalConfigFilePath };
 };
+

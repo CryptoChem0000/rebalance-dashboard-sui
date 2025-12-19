@@ -10,6 +10,8 @@ import {
   profitCommand,
   transactionsCommand,
   statsCommand,
+  suiCommand,
+  rebalanceDashboardCommand,
 } from "./commands";
 
 const program = new Command();
@@ -30,6 +32,8 @@ volumeCommand(program);
 profitCommand(program);
 transactionsCommand(program);
 statsCommand(program);
+suiCommand(program);
+rebalanceDashboardCommand(program);
 
 program.parse();
 

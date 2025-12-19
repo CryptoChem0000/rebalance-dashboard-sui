@@ -94,6 +94,28 @@ export class SQLiteTransactionRepository implements TransactionRepository {
       )
     `);
 
+    // Migrate existing tables: Add missing columns if they don't exist
+    try {
+      const tableInfo = this.db.prepare("PRAGMA table_info(account_transactions)").all() as Array<{ name: string }>;
+      const columnNames = tableInfo.map((col) => col.name);
+
+      if (!columnNames.includes("platform_name")) {
+        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_name VARCHAR(100)");
+      }
+      if (!columnNames.includes("platform_fee_amount")) {
+        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_amount VARCHAR(78)");
+      }
+      if (!columnNames.includes("platform_fee_token_denom")) {
+        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_token_denom VARCHAR(100)");
+      }
+      if (!columnNames.includes("platform_fee_token_name")) {
+        this.db.exec("ALTER TABLE account_transactions ADD COLUMN platform_fee_token_name VARCHAR(42)");
+      }
+    } catch (error) {
+      // If migration fails, log but don't crash - table might be in an inconsistent state
+      console.warn("Warning: Database migration check failed:", error);
+    }
+
     // Create indexes for common queries
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_transaction_type_timestamp 

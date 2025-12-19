@@ -14,6 +14,7 @@ export type Config = {
   positionId?: string;
   positionBandPercentage: number;
   chain: "osmosis" | "sui";
+  slippage?: number; // Slippage tolerance (e.g., 0.01 for 1%, 0.05 for 5%)
 };
 
 export type MakeOsmosisLiquidityManagerParams = {

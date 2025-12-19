@@ -1,6 +1,6 @@
 import { BoltSuiClient } from "@bolt-liquidity-hq/sui-client";
 import { TickMath } from "@cetusprotocol/common-sdk";
-import { Pool } from "@cetusprotocol/sui-clmm-sdk";
+import { Pool, CustomRangeParams } from "@cetusprotocol/sui-clmm-sdk";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { BigNumber } from "bignumber.js";
 import fs from "fs/promises";
@@ -12,7 +12,7 @@ import {
   extractGasFees,
   extractPlatformFees,
 } from "../cetus-integration";
-import { loadConfigWithEnvOverrides } from "./config-loader";
+import { loadSuiConfigWithEnvOverrides } from "./sui-config-loader";
 import {
   CETUS_CREATE_LP_POSITION_FEE,
   CETUS_WITHDRAW_LP_POSITION_FEE,
@@ -70,9 +70,9 @@ export class SuiLiquidityManager {
     let config = params.config;
     let configFilePath = params.configFilePath;
     if (!config || !configFilePath) {
-      const loadResult = await loadConfigWithEnvOverrides(
-        params.configFilePath
-      );
+      const loadResult = await loadSuiConfigWithEnvOverrides(
+      params.configFilePath
+    );
       config = loadResult.config;
       configFilePath = loadResult.configFilePath;
     }
@@ -210,7 +210,7 @@ export class SuiLiquidityManager {
     suiBalances?: Record<string, TokenAmount>
   ): Promise<CreatePositionResult> {
     // Constants
-    const POSITION_SLIPPAGE = DEFAULT_POSITION_SLIPPAGE; // 1%
+    const POSITION_SLIPPAGE = this.config.slippage ?? DEFAULT_POSITION_SLIPPAGE; // Use config slippage or default to 1%
     const GAS_RESERVE = BigNumber(CETUS_CREATE_LP_POSITION_FEE)
       .plus(CETUS_WITHDRAW_LP_POSITION_FEE)
       .plus(SUI_BOLT_SWAP_FEE)
@@ -276,9 +276,22 @@ export class SuiLiquidityManager {
     );
 
     // Calculate price range
-    const bandPercentage = BigNumber(this.config.positionBandPercentage).div(
-      100
+    // Ensure minimum band of 0.5% to avoid tick range validation errors
+    const minBandPercentage = BigNumber(0.5).div(100);
+    const requestedBandPercentage = BigNumber(
+      this.config.positionBandPercentage
+    ).div(100);
+    const bandPercentage = BigNumber.max(
+      requestedBandPercentage,
+      minBandPercentage
     );
+    
+    if (requestedBandPercentage.lt(minBandPercentage)) {
+    console.log(
+        `Warning: Requested band percentage (${this.config.positionBandPercentage}%) is too narrow. Using minimum of 0.5% to ensure valid tick range.`
+    );
+    }
+
     const lowerPrice = BigNumber(currentPriceHumanReadable)
       .times(BigNumber(1).minus(bandPercentage))
       .toFixed(token1.decimals);
@@ -295,10 +308,12 @@ export class SuiLiquidityManager {
     const token1ValueInToken0 = safeToken1Amount.div(currentPrice);
     const totalValueInToken0 = safeToken0Amount.plus(token1ValueInToken0);
 
-    // Based on empirical observation, Cetus requires much more token1 than theory suggests
-    // Let's use a very conservative approach: assume we can only use about 30-40% of our total value as token0
-    const conservativeToken0Ratio = 0.35; // Use only 35% of total value as token0
-    const idealToken0ToKeep = totalValueInToken0.times(conservativeToken0Ratio);
+    // Calculate optimal token0 ratio based on available balances
+    // For a balanced position, we want roughly 50% of value in each token
+    // But we need to account for slippage, so we'll aim for slightly less to be safe
+    // We'll calculate the maximum token0 we can use while ensuring we have enough token1
+    const targetToken0Ratio = 0.48; // Aim for ~48% to leave buffer for slippage
+    const idealToken0ToKeep = totalValueInToken0.times(targetToken0Ratio);
 
     // For swap calculation, estimate token1 needs conservatively
     const idealToken1After = totalValueInToken0
@@ -330,7 +345,7 @@ export class SuiLiquidityManager {
     if (hasSwapped) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       currentSuiBalances = await this.getSuiAccountBalances();
-    }
+            }
 
     currentBalance0 =
       currentSuiBalances[token0.denom] ?? new TokenAmount(0, token0);
@@ -354,6 +369,7 @@ export class SuiLiquidityManager {
       token1.decimals
     );
 
+    // Use the same band percentage (with minimum enforced)
     const refreshedLowerPrice = BigNumber(refreshedPriceHumanReadable)
       .times(BigNumber(1).minus(bandPercentage))
       .toFixed(token1.decimals);
@@ -365,23 +381,161 @@ export class SuiLiquidityManager {
       `Available safe balances after swap: ${safeBalance0.humanReadableAmount} ${token0.name}, ${safeBalance1.humanReadableAmount} ${token1.name}`
     );
 
-    const refreshedPrice = BigNumber(refreshedPriceHumanReadable).shiftedBy(
-      token1.decimals - token0.decimals
-    );
+    // Use human-readable price for calculations (not shifted)
     const finalSafeToken0Amount = BigNumber(safeBalance0.amount);
     const finalSafeToken1Amount = BigNumber(safeBalance1.amount);
 
-    const finalToken1ValueInToken0 = finalSafeToken1Amount.div(refreshedPrice);
+    // Calculate total value in token0 terms using human-readable price
+    const finalToken1ValueInToken0 = finalSafeToken1Amount
+      .div(10 ** token1.decimals) // Convert to human-readable
+      .times(refreshedPriceHumanReadable) // Multiply by human-readable price
+      .times(10 ** token0.decimals); // Convert back to smallest units
+    
     const finalTotalValueInToken0 = finalSafeToken0Amount.plus(
       finalToken1ValueInToken0
     );
 
-    // Use the same conservative approach for final calculation
-    const conservativeToken0RatioFinal = 0.35; // Use only 35% of total value as token0
-    const optimalFinalToken0 = BigNumber.min(
-      finalTotalValueInToken0.times(conservativeToken0RatioFinal),
+    // Calculate optimal token0 amount to maximize liquidity usage
+    // Start with a target ratio (aim for ~48% to leave buffer for slippage)
+    const targetToken0RatioFinal = 0.48;
+    let optimalFinalToken0 = BigNumber.min(
+      finalTotalValueInToken0.times(targetToken0RatioFinal),
       finalSafeToken0Amount
     );
+
+    // Pre-validate using SDK to get accurate token1 requirement
+    // This is more accurate than estimating
+    try {
+      const rangeParams: CustomRangeParams = {
+      is_full_range: false,
+      min_price: refreshedLowerPrice,
+      max_price: refreshedUpperPrice,
+      coin_decimals_a: token0.decimals,
+      coin_decimals_b: token1.decimals,
+      price_base_coin: "coin_a",
+    };
+
+      const testResult =
+        await this.cetusPoolManager.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+          add_mode_params: rangeParams,
+          pool_id: this.cetusPoolManager.poolId,
+          slippage: POSITION_SLIPPAGE,
+          coin_amount: optimalFinalToken0.toFixed(0),
+          fix_amount_a: true,
+        });
+
+      const requiredToken1WithSlippage = BigNumber(testResult.coin_amount_limit_b);
+
+      console.log(
+        `Pre-validation: For ${new TokenAmount(optimalFinalToken0.toFixed(0), token0).humanReadableAmount} ${token0.name}, SDK calculates need ${new TokenAmount(requiredToken1WithSlippage.toFixed(0), token1).humanReadableAmount} ${token1.name} (have ${new TokenAmount(finalSafeToken1Amount.toFixed(0), token1).humanReadableAmount})`
+      );
+
+      // If we don't have enough token1, calculate the maximum token0 we can use
+      if (requiredToken1WithSlippage.gt(finalSafeToken1Amount)) {
+        console.log(
+          `Insufficient token1. Calculating maximum token0 we can use with available token1...`
+        );
+
+        // Binary search to find max token0 that works with available token1
+        let maxToken0 = BigNumber(0);
+        let testToken0 = optimalFinalToken0;
+        let attempts = 0;
+        const maxAttempts = 10;
+
+        while (attempts < maxAttempts && testToken0.gt(0)) {
+          try {
+            const testCalcResult =
+              await this.cetusPoolManager.cetusSdk.Position.calculateAddLiquidityResultWithPrice({
+                add_mode_params: rangeParams,
+                pool_id: this.cetusPoolManager.poolId,
+                slippage: POSITION_SLIPPAGE,
+                coin_amount: testToken0.toFixed(0),
+                  fix_amount_a: true,
+              });
+
+            const testToken1Required = BigNumber(testCalcResult.coin_amount_limit_b);
+
+            if (testToken1Required.lte(finalSafeToken1Amount)) {
+              maxToken0 = testToken0;
+              // Try increasing to find the maximum
+              testToken0 = testToken0.times(1.1).decimalPlaces(0);
+              if (testToken0.gt(finalSafeToken0Amount)) {
+                testToken0 = finalSafeToken0Amount;
+              }
+            } else {
+              // Too much, reduce
+              testToken0 = testToken0.times(0.9).decimalPlaces(0);
+            }
+          } catch (e) {
+            // If calculation fails, reduce amount
+            testToken0 = testToken0.times(0.9).decimalPlaces(0);
+          }
+          attempts++;
+        }
+
+        if (maxToken0.gt(0)) {
+          optimalFinalToken0 = BigNumber.min(maxToken0, finalSafeToken0Amount).decimalPlaces(0);
+          console.log(
+            `Adjusted token0 amount to ${new TokenAmount(optimalFinalToken0.toFixed(0), token0).humanReadableAmount} ${token0.name} based on available token1 with slippage`
+          );
+        } else {
+          // Fallback: use 90% of available token1 to maximize liquidity utilization
+          const token1AvailableHumanReadable = finalSafeToken1Amount.div(10 ** token1.decimals);
+          // Use 90% of available token1 to ensure we're utilizing most of the liquidity
+          const token1ToUse = token1AvailableHumanReadable.times(0.9);
+          const maxToken0HumanReadable = token1ToUse.times(refreshedPriceHumanReadable);
+          optimalFinalToken0 = BigNumber.min(
+            maxToken0HumanReadable.times(10 ** token0.decimals),
+            finalSafeToken0Amount
+          ).decimalPlaces(0);
+          console.log(
+            `Fallback: Using 90% of available token1 (${new TokenAmount(token1ToUse.times(10 ** token1.decimals).toFixed(0), token1).humanReadableAmount} ${token1.name}) to calculate token0 amount: ${new TokenAmount(optimalFinalToken0.toFixed(0), token0).humanReadableAmount} ${token0.name}`
+          );
+        }
+      } else {
+        // We have enough token1, check if we can use more token0
+        const slippageMultiplier = BigNumber(1).plus(POSITION_SLIPPAGE);
+        const token1AvailableHumanReadable = finalSafeToken1Amount.div(10 ** token1.decimals);
+        const token1NeededAfterSlippage = token1AvailableHumanReadable.div(slippageMultiplier);
+        const maxToken0HumanReadable = token1NeededAfterSlippage.times(refreshedPriceHumanReadable);
+        const maxToken0FromToken1 = maxToken0HumanReadable.times(10 ** token0.decimals);
+
+        // Use the maximum of: target ratio OR what we can use based on token1 availability
+        optimalFinalToken0 = BigNumber.min(
+          BigNumber.max(
+            optimalFinalToken0,
+            maxToken0FromToken1.times(0.95) // Use 95% of max to leave small buffer
+          ),
+          finalSafeToken0Amount
+        ).decimalPlaces(0);
+
+        if (optimalFinalToken0.gt(finalTotalValueInToken0.times(targetToken0RatioFinal))) {
+        console.log(
+            `Using more token0 (${new TokenAmount(optimalFinalToken0.toFixed(0), token0).humanReadableAmount} ${token0.name}) than target ratio to maximize liquidity usage`
+        );
+        }
+      }
+    } catch (error) {
+      console.warn(
+        `Pre-validation failed, using estimated calculation: ${error instanceof Error ? error.message : String(error)}`
+      );
+      // Fallback to simple estimation if SDK call fails
+      // Use 90% of available token1 to maximize liquidity utilization
+      const slippageMultiplier = BigNumber(1).plus(POSITION_SLIPPAGE);
+      const token1AvailableHumanReadable = finalSafeToken1Amount.div(10 ** token1.decimals);
+      // Use 90% of available token1 to ensure we're utilizing most of the liquidity
+      const token1ToUse = token1AvailableHumanReadable.times(0.9);
+      // Account for slippage: if we use X token1, we need X / (1 + slippage) worth
+      // But since we're using 90% already, we'll use that directly and let the SDK handle slippage
+      const maxToken0HumanReadable = token1ToUse.times(refreshedPriceHumanReadable);
+      optimalFinalToken0 = BigNumber.min(
+        maxToken0HumanReadable.times(10 ** token0.decimals),
+        finalSafeToken0Amount
+      ).decimalPlaces(0);
+      console.log(
+        `Fallback: Using 90% of available token1 (${new TokenAmount(token1ToUse.times(10 ** token1.decimals).toFixed(0), token1).humanReadableAmount} ${token1.name}) to calculate token0 amount: ${new TokenAmount(optimalFinalToken0.toFixed(0), token0).humanReadableAmount} ${token0.name}`
+      );
+    }
 
     console.log(
       `Final optimal token0 amount (conservative): ${
@@ -490,7 +644,23 @@ export class SuiLiquidityManager {
 
     console.log(
       `Rebalancing tokens using Bolt to get closer to ideal amount...`
-    );
+          );
+
+    // Cap swap amount to a maximum percentage of available balance to avoid liquidity issues
+    // Start with 50% of available balance as a conservative cap
+    const maxSwapPercentage = 0.5;
+    const availableBalance = swapFromToken.denom === token0.denom 
+      ? currentAmount0 
+      : currentAmount1;
+    const maxSwapAmount = availableBalance.times(maxSwapPercentage);
+    const originalAmountToSwap = amountToSwap;
+    amountToSwap = BigNumber.min(amountToSwap, maxSwapAmount);
+
+    if (amountToSwap.lt(originalAmountToSwap)) {
+      console.log(
+        `Capping swap amount from ${new TokenAmount(originalAmountToSwap.toFixed(0), swapFromToken).humanReadableAmount} to ${new TokenAmount(amountToSwap.toFixed(0), swapFromToken).humanReadableAmount} (${(maxSwapPercentage * 100).toFixed(0)}% of available balance) to avoid liquidity issues`
+            );
+          }
 
     // Check minimum swap amount
     try {
@@ -512,14 +682,7 @@ export class SuiLiquidityManager {
       console.log("Could not check minimum swap amount, proceeding with swap");
     }
 
-    // Execute swap
-    console.log(
-      `Swapping ${
-        new TokenAmount(amountToSwap.toFixed(0), swapFromToken)
-          .humanReadableAmount
-      } ${swapFromToken.name} for ${swapToToken.name}...`
-    );
-
+    // Execute swap with retry logic for insufficient liquidity errors
     const innerSuiBalances =
       suiBalances ?? (await this.getSuiAccountBalances());
     assertEnoughBalanceForFees(
@@ -529,14 +692,80 @@ export class SuiLiquidityManager {
       "swap on Bolt"
     );
 
-    const swapResult = await this.boltClient.swap(
-      {
-        amountIn: amountToSwap.toFixed(0),
-        assetIn,
-        assetOut,
-      },
-      this.signer
-    );
+    let swapResult;
+    let retryAmount = amountToSwap;
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount <= maxRetries) {
+      try {
+        console.log(
+          `Swapping ${
+            new TokenAmount(retryAmount.toFixed(0), swapFromToken)
+              .humanReadableAmount
+          } ${swapFromToken.name} for ${swapToToken.name}...`
+        );
+
+        swapResult = await this.boltClient.swap(
+          {
+            amountIn: retryAmount.toFixed(0),
+            assetIn,
+            assetOut,
+          },
+          this.signer
+        );
+        break; // Success, exit retry loop
+      } catch (error: any) {
+        // Check if error is due to insufficient liquidity (error code 4000 or similar)
+        const errorMessage = error?.message || '';
+        const originalError = error?.originalError;
+        const cause = originalError?.cause;
+        const isLiquidityError = 
+          error?.code === 4000 ||
+          (cause?.executionErrorSource === 'VMError with status ABORTED' && 
+           (errorMessage.includes('4000') || cause?.effects?.status?.status === 'ABORTED')) ||
+          (errorMessage.includes('4000') && errorMessage.includes('swap_buy')) ||
+          (originalError?.message?.includes('4000') && originalError?.message?.includes('swap_buy'));
+
+        if (isLiquidityError && retryCount < maxRetries) {
+          retryCount++;
+          // Reduce swap amount by 5% for next retry
+          retryAmount = retryAmount.times(0.95).decimalPlaces(0);
+          console.log(
+            `Swap failed due to insufficient liquidity. Retrying with reduced amount: ${new TokenAmount(retryAmount.toFixed(0), swapFromToken).humanReadableAmount} ${swapFromToken.name} (attempt ${retryCount + 1}/${maxRetries + 1})`
+          );
+          
+          // Check if reduced amount is still above minimum
+          try {
+            const boltPoolConfig = await this.boltClient.getPoolConfigByDenom(
+              assetOut,
+              assetIn
+            );
+            const boltPriceResult = await this.boltClient.getPrice(assetIn, assetOut);
+            const expectedOutput = retryAmount.times(boltPriceResult.price);
+            
+            if (boltPoolConfig && expectedOutput.lte(boltPoolConfig.minBaseOut)) {
+              console.log(
+                `Reduced swap amount is below minimum. Skipping swap.`
+              );
+              return false;
+            }
+          } catch (e) {
+            // Continue with retry
+          }
+        } else {
+          // Not a liquidity error or max retries reached, throw the error
+          throw error;
+        }
+      }
+    }
+
+    if (!swapResult) {
+      console.log(
+        `Failed to execute swap after ${maxRetries + 1} attempts. Skipping swap.`
+      );
+      return false;
+    }
 
     const swapGasFees = extractGasFees(
       swapResult.txOutput,
@@ -548,12 +777,13 @@ export class SuiLiquidityManager {
       swapToToken
     );
 
-    // Log swap transaction
+    // Log swap transaction (use the actual amount that was swapped, which may have been reduced)
+    const actualSwapAmount = retryAmount || amountToSwap;
     await this.database.addTransaction({
       signerAddress: this.address,
       chainId: this.chainInfo.id,
       transactionType: TransactionType.BOLT_SUI_SWAP,
-      inputAmount: new TokenAmount(amountToSwap.toFixed(0), swapFromToken)
+      inputAmount: new TokenAmount(actualSwapAmount.toFixed(0), swapFromToken)
         .humanReadableAmount,
       inputTokenDenom: swapFromToken.denom,
       inputTokenName: swapFromToken.name,
@@ -634,7 +864,7 @@ export class SuiLiquidityManager {
             this.cetusPoolManager.token0.decimals,
             this.cetusPoolManager.token1.decimals
           ).toString(),
-          liquidity: position.liquidity,
+        liquidity: position.liquidity,
           asset0: {
             amount: "",
             denom: this.cetusPoolManager.token0.denom,

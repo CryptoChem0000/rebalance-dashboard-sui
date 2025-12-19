@@ -3,6 +3,8 @@ export * from "./report";
 export * from "./run";
 export * from "./stats";
 export * from "./status";
+export * from "./sui";
 export * from "./transactions";
 export * from "./volume";
 export * from "./withdraw";
+export * from "./rebalance-dashboard";

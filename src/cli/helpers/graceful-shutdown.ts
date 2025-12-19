@@ -5,13 +5,14 @@ export interface ShutdownHandler {
 
 export class GracefulShutdown {
   private isShuttingDown = false;
+  private shutdownRequestCount = 0;
   private currentOperation: Promise<any> | null = null;
   private handlers: ShutdownHandler[] = [];
 
   constructor() {
-    // Register signal handlers once
-    process.once("SIGTERM", () => this.shutdown("SIGTERM"));
-    process.once("SIGINT", () => this.shutdown("SIGINT"));
+    // Register signal handlers (use on() instead of once() to ensure they're always active)
+    process.on("SIGTERM", () => this.shutdown("SIGTERM"));
+    process.on("SIGINT", () => this.shutdown("SIGINT"));
   }
 
   registerHandler(handler: ShutdownHandler) {
@@ -27,9 +28,19 @@ export class GracefulShutdown {
   }
 
   private async shutdown(signal: string) {
-    if (this.isShuttingDown) return; // Prevent multiple shutdowns
+    this.shutdownRequestCount++;
+    
+    // If already shutting down and user presses Ctrl+C again, force exit
+    if (this.isShuttingDown) {
+      if (this.shutdownRequestCount >= 2) {
+        console.log(`\n🛑 Force exit requested. Exiting immediately...`);
+        process.exit(1);
+      }
+      return;
+    }
 
     console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+    console.log(`Press Ctrl+C again to force exit immediately.`);
     this.isShuttingDown = true;
 
     // Wait for current operation

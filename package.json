@@ -31,6 +31,7 @@
     "profit": "tsx src/cli/index.ts profit",
     "stats": "tsx src/cli/index.ts stats",
     "sui": "tsx src/cli/index.ts sui",
+    "swap:usdc-to-sui": "tsx scripts/swap-usdc-to-sui.ts",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
