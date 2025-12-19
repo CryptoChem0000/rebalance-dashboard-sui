@@ -46,16 +46,28 @@ A real-time monitoring dashboard for Bolt liquidity pools that displays pool bal
 
 Run the dashboard once without auto-refresh:
 
+**Using npm:**
 ```bash
 npm run cli -- rebalance-dashboard
+```
+
+**Using npx:**
+```bash
+npx tsx src/cli/index.ts rebalance-dashboard
 ```
 
 ### Auto-refresh Mode
 
 Run the dashboard with automatic refresh every N seconds:
 
+**Using npm:**
 ```bash
 npm run cli -- rebalance-dashboard --refresh 100
+```
+
+**Using npx:**
+```bash
+npx tsx src/cli/index.ts rebalance-dashboard --refresh 100
 ```
 
 This will refresh the dashboard every 100 seconds and keep all previous data visible for comparison.
@@ -63,23 +75,51 @@ This will refresh the dashboard every 100 seconds and keep all previous data vis
 ### Command Options
 
 - `--refresh <seconds>` - Auto-refresh interval in seconds (default: no auto-refresh)
+  
+  **Using npm:**
   ```bash
   npm run cli -- rebalance-dashboard --refresh 60
   ```
+  
+  **Using npx:**
+  ```bash
+  npx tsx src/cli/index.ts rebalance-dashboard --refresh 60
+  ```
 
 - `--endpoint <endpoint>` - Custom Bolt gRPC endpoint (default: `144.76.3.52:50063`)
+  
+  **Using npm:**
   ```bash
   npm run cli -- rebalance-dashboard --endpoint YOUR_ENDPOINT:PORT
   ```
+  
+  **Using npx:**
+  ```bash
+  npx tsx src/cli/index.ts rebalance-dashboard --endpoint YOUR_ENDPOINT:PORT
+  ```
 
 - `--debug` - Show debug information including raw API responses
+  
+  **Using npm:**
   ```bash
   npm run cli -- rebalance-dashboard --debug
   ```
+  
+  **Using npx:**
+  ```bash
+  npx tsx src/cli/index.ts rebalance-dashboard --debug
+  ```
 
 - `--help` - Display help information
+  
+  **Using npm:**
   ```bash
   npm run cli -- rebalance-dashboard --help
+  ```
+  
+  **Using npx:**
+  ```bash
+  npx tsx src/cli/index.ts rebalance-dashboard --help
   ```
 
 ## What the Dashboard Shows
@@ -136,9 +176,16 @@ Press `Ctrl + C` in the terminal to stop the dashboard.
 ## Troubleshooting
 
 ### "command not found: tsx"
-Use `npx` to run tsx:
+If you encounter this error, use `npx` to run tsx directly:
+
 ```bash
 npx tsx src/cli/index.ts rebalance-dashboard --refresh 100
+```
+
+Alternatively, you can use the npm command which handles this automatically:
+
+```bash
+npm run cli -- rebalance-dashboard --refresh 100
 ```
 
 ### "grpcurl: command not found"
